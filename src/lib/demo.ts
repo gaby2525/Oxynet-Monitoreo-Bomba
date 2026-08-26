@@ -1,4 +1,4 @@
-import type { Medicion, PuntoHistorial } from './types';
+import type { EstadoDispositivo, Medicion, PuntoHistorial } from './types';
 
 /**
  * Modo demostracion (`?demo=1`): genera lecturas sinteticas para poder ver la
@@ -59,4 +59,20 @@ export function historialDemo(desdeMs: number, hastaMs: number, maxPuntos: numbe
     puntos.push(medicionDemo(t));
   }
   return puntos;
+}
+
+/** Estado de dispositivo simulado, para ver la tarjeta sin el ESP32 encendido. */
+export function estadoDispositivoDemo(ms: number): EstadoDispositivo {
+  return {
+    ssid: 'Oxynet-Taller',
+    // Senal que respira un poco, para que el indicador no parezca congelado.
+    rssi: Math.round(-58 + Math.sin(ms / 40_000) * 7),
+    ip: '192.168.1.47',
+    mac: 'A0:B7:65:2C:11:9E',
+    uptimeS: Math.floor((ms % (86_400_000 * 3)) / 1000),
+    firmware: 'oxynet-esp32 2.0.0 (demo)',
+    intervaloMs: 5000,
+    ms,
+    wifiAplicado: '',
+  };
 }

@@ -2,11 +2,8 @@
   // Reglas de la Realtime Database.
   // Consola de Firebase -> Realtime Database -> pestana "Reglas" -> pegar y publicar.
   //
-  // Lectura: cualquier sesion iniciada (el panel web entra de forma anonima).
-  // Escritura: solo el usuario del ESP32.
-  //
-  // Reemplazar UID_DEL_ESP32 por el UID que aparece en
-  // Authentication -> Users, en la fila del usuario del dispositivo.
+  // Reemplazar UID_DEL_ESP32 por el UID que aparece en Authentication -> Users,
+  // en la fila del usuario del dispositivo.
   "rules": {
     ".read": false,
     ".write": false,
@@ -36,6 +33,37 @@
           "fp":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
           "$otro": { ".validate": false }
         }
+      },
+
+      // Lo que el ESP32 cuenta sobre si mismo: red, senal, IP, uptime.
+      // Lo lee el panel; solo el dispositivo lo escribe (regla heredada de arriba).
+      "estado_dispositivo": {
+        "ssid":          { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "rssi":          { ".validate": "newData.isNumber()" },
+        "ip":            { ".validate": "newData.isString() && newData.val().length <= 45" },
+        "mac":           { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "uptime_s":      { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "firmware":      { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "intervalo_ms":  { ".validate": "newData.isNumber() && newData.val() > 0" },
+        "timestamp":     { ".validate": "newData.isNumber()" },
+        "wifi_aplicado": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "$otro":         { ".validate": false }
+      },
+
+      // Red que el panel deja preparada para el ESP32.
+      //
+      // Se puede ESCRIBIR con cualquier sesion iniciada, pero solo el ESP32 puede
+      // LEERLA: asi la clave del Wi-Fi no se recupera desde el panel ni desde la
+      // consola de nadie que entre a mirar. El dispositivo la copia a su memoria
+      // y borra el nodo enseguida.
+      "wifi_solicitado": {
+        ".read": "auth != null && auth.uid === 'UID_DEL_ESP32'",
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['ssid'])",
+        "ssid":          { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 32" },
+        "clave":         { ".validate": "newData.isString() && newData.val().length <= 63" },
+        "solicitado_en": { ".validate": "newData.isNumber()" },
+        "$otro":         { ".validate": false }
       }
     }
   }

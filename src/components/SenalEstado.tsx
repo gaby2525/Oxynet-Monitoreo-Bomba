@@ -5,7 +5,7 @@ const TEXTOS: Record<EstadoConexion, string> = {
   conectando: 'Conectando…',
   'en-vivo': 'En vivo',
   desactualizado: 'Senal demorada',
-  'sin-datos': 'Sin datos del ESP32',
+  'sin-datos': 'Sin datos',
   error: 'Error de conexion',
 };
 
@@ -27,7 +27,7 @@ export function SenalEstado({ estado, ultimoMs, ahora }: Props) {
     <span className={`senal senal--${estado}`} role="status">
       <span className="senal__punto" aria-hidden="true" />
       <span>{TEXTOS[estado]}</span>
-      {detalle && <span style={{ color: 'var(--tinta-muted)' }}>· {detalle}</span>}
+      {detalle && <span className="senal__detalle">· {detalle}</span>}
     </span>
   );
 }

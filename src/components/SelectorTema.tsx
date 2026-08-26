@@ -8,7 +8,7 @@ const OPCIONES: { valor: Tema; etiqueta: string; titulo: string }[] = [
 
 export function SelectorTema({ tema, onCambiar }: { tema: Tema; onCambiar: (t: Tema) => void }) {
   return (
-    <div className="selector-tema" role="group" aria-label="Tema de la interfaz">
+    <div className="segmentado" role="group" aria-label="Tema de la interfaz">
       {OPCIONES.map((o) => (
         <button
           key={o.valor}

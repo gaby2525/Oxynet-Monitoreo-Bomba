@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { limitToLast, off, onValue, orderByKey, query, ref, startAt } from 'firebase/database';
+import { limitToLast, onValue, orderByKey, query, ref } from 'firebase/database';
 import { obtenerDb } from '../lib/firebase';
 import { DB_ROOT } from '../lib/config';
 import { historialDemo, modoDemo } from '../lib/demo';
-import type { Rango } from '../lib/rangos';
+import type { Rango, Ventana } from '../lib/rangos';
 import type { HistorialRaw, PuntoHistorial } from '../lib/types';
 
 interface Resultado {
   puntos: PuntoHistorial[];
   cargando: boolean;
   error: string | null;
-  /** `true` cuando se alcanzo el tope de descarga y el rango quedo recortado. */
+  /** `true` cuando se alcanzo el tope de descarga y la ventana quedo incompleta. */
   recortado: boolean;
   /** Inicio efectivo del eje temporal. */
   desdeMs: number;
@@ -22,22 +22,26 @@ const aNumero = (v: unknown): number => {
 };
 
 /**
- * Historial dentro de una ventana temporal. Se re-suscribe al cambiar de rango;
- * el `epoch` de re-anclaje evita que la ventana quede congelada en el pasado
- * cuando la pestana lleva horas abierta.
+ * Historial dentro de una ventana temporal.
+ *
+ * La consulta pide los ultimos `maxPuntos` por clave y el recorte a la ventana
+ * se hace en el cliente. Se evito `startAt()` a proposito: las claves son el
+ * epoch en segundos, que la Realtime Database indexa como enteros, y el filtro
+ * por clave no se comporta igual para todos los formatos. Filtrar aca es
+ * predecible y el tope de descarga es el mismo.
  */
-export function useHistorial(rango: Rango, epoch: number, habilitado: boolean): Resultado {
-  const [puntos, setPuntos] = useState<PuntoHistorial[]>([]);
+export function useHistorial(rango: Rango, ventana: Ventana, habilitado: boolean): Resultado {
+  const [crudos, setCrudos] = useState<PuntoHistorial[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [recortado, setRecortado] = useState(false);
+  const [tope, setTope] = useState(false);
 
-  const desdeMs = useMemo(() => epoch - rango.ms, [epoch, rango.ms]);
+  const { desdeMs, hastaMs } = ventana;
 
   useEffect(() => {
     if (modoDemo) {
-      setPuntos(historialDemo(desdeMs, desdeMs + rango.ms, rango.maxPuntos));
-      setRecortado(false);
+      setCrudos(historialDemo(desdeMs, hastaMs, rango.maxPuntos));
+      setTope(false);
       setCargando(false);
       setError(null);
       return;
@@ -53,15 +57,16 @@ export function useHistorial(rango: Rango, epoch: number, habilitado: boolean): 
 
     setCargando(true);
 
-    const desdeSegundos = Math.floor(desdeMs / 1000);
     const consulta = query(
       ref(db, `${DB_ROOT}/historial`),
       orderByKey(),
-      startAt(String(desdeSegundos)),
       limitToLast(rango.maxPuntos),
     );
 
-    const suscripcion = onValue(
+    // El valor de retorno de onValue es la baja de ESTA consulta. Usar `off()`
+    // sobre la referencia pelada no daba de baja nada, y cada cambio de rango
+    // dejaba un listener vivo pisando los datos del nuevo.
+    return onValue(
       consulta,
       (snap) => {
         const acumulado: PuntoHistorial[] = [];
@@ -78,8 +83,8 @@ export function useHistorial(rango: Rango, epoch: number, habilitado: boolean): 
           });
         });
         acumulado.sort((a, b) => a.ms - b.ms);
-        setPuntos(acumulado);
-        setRecortado(acumulado.length >= rango.maxPuntos);
+        setCrudos(acumulado);
+        setTope(acumulado.length >= rango.maxPuntos);
         setCargando(false);
         setError(null);
       },
@@ -88,13 +93,17 @@ export function useHistorial(rango: Rango, epoch: number, habilitado: boolean): 
         setError(err.message);
       },
     );
+  }, [desdeMs, hastaMs, rango.maxPuntos, habilitado]);
 
-    return () => off(ref(db, `${DB_ROOT}/historial`), 'value', suscripcion);
-  }, [desdeMs, rango.ms, rango.maxPuntos, habilitado]);
+  const puntos = useMemo(
+    () => crudos.filter((p) => p.ms >= desdeMs && p.ms <= hastaMs),
+    [crudos, desdeMs, hastaMs],
+  );
 
-  // Con la ventana recortada el eje debe arrancar en el primer dato real, no en
-  // el borde teorico del rango, o el grafico queda con medio lienzo vacio.
-  const desdeEfectivo = recortado && puntos.length > 0 ? puntos[0].ms : desdeMs;
+  // Solo esta recortada si ademas de tocar el tope, lo descargado empieza
+  // despues del inicio pedido: si no, el tope simplemente no molesto.
+  const recortado = tope && crudos.length > 0 && crudos[0].ms > desdeMs;
+  const desdeEfectivo = recortado ? crudos[0].ms : desdeMs;
 
   return { puntos, cargando, error, recortado, desdeMs: desdeEfectivo };
 }

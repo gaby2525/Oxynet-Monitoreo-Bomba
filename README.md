@@ -42,34 +42,69 @@ cualquier app web de Firebase. Lo que protege los datos son las reglas, no escon
 
 - Bomba en marcha / detenida, deducido de la potencia activa.
 - Tensión, corriente, potencia y factor de potencia, cada uno con su estado (normal / atención /
-  fuera de rango) según los umbrales configurados.
-- Consumo acumulado (kWh del PZEM), potencia trifásica estimada, tiempo en marcha y cantidad de
-  arranques dentro del rango elegido.
+  fuera de rango) y con un color propio que se repite en su gráfico.
+- Tira de resumen: consumo acumulado, potencia trifásica estimada, energía del rango, tiempo en
+  marcha, ciclo de trabajo y arranques.
 - Indicador de señal: avisa cuando hace más de 20 s que no llega una lectura nueva.
 
 **Alarmas**
 
-Se calculan sobre la última medición y aparecen arriba de todo: subtensión, sobretensión,
-sobrecorriente, corriente elevada (>85 % del máximo) y factor de potencia bajo. Con la bomba
-detenida no se disparan alarmas de corriente ni de cos φ, porque en reposo esos valores en cero son
-lo esperado.
+Se calculan sobre la última medición: subtensión, sobretensión, sobrecorriente, corriente elevada
+(>85 % del máximo), potencia sobre el máximo y factor de potencia bajo. Con la bomba detenida no se
+disparan alarmas de corriente ni de cos φ, porque en reposo esos valores en cero son lo esperado.
+
+**Umbrales editables desde la app**
+
+El botón **⚙ Umbrales** abre un panel donde se define el mínimo y el máximo de cada variable. Dejar
+un campo vacío quita ese límite. Los cambios se reflejan al instante en las alarmas, en las líneas
+punteadas de los gráficos y en el CSV.
+
+Se guardan en el navegador (`localStorage`), así que valen por dispositivo: en el celular hay que
+cargarlos de nuevo. A cambio, no hace falta abrir la escritura de la base ni nadie puede cambiarlos
+de afuera. Los valores de fábrica salen de las variables de entorno, y **Restablecer** vuelve a
+ellos.
 
 **Historial**
 
-- Rangos de 15 min, 1 h, 6 h, 24 h y 7 días.
-- Cuatro gráficos (tensión, corriente, potencia, cos φ) con crosshair, tooltip, línea de umbral y,
-  cuando el rango obliga a agrupar muestras, la envolvente mín–máx de cada bucket — así los picos de
-  arranque no se pierden en el promedio.
-- Vista de tabla equivalente y descarga en CSV (separador `;` y coma decimal, listo para Excel en
-  español).
-- Tema claro / oscuro / automático.
+- Rangos de 15 min, 1 h, 6 h, 24 h, 7 días y **Personalizado**, que abre dos campos de fecha y hora
+  para elegir cualquier ventana.
+- Cuatro gráficos con crosshair, tooltip, línea de umbral y, cuando el rango obliga a agrupar
+  muestras, la envolvente mín–máx de cada bucket — así los picos de arranque no se pierden en el
+  promedio.
+- Debajo de cada gráfico: mínimo, promedio, **promedio en marcha**, máximo, desvío y último.
+- Vista de tabla equivalente, con potencia aparente incluida.
+
+**Informe CSV**
+
+El botón de descarga arma un CSV de tres bloques:
+
+1. **Cabecera del periodo**: rango, desde/hasta, registros, energía estimada, tiempo con datos,
+   tiempo en marcha, ciclo de trabajo, arranques y potencia media en marcha.
+2. **Resumen por variable**: mínimo y máximo con el momento exacto en que ocurrieron, promedio,
+   promedio en marcha, desvío, último valor y los límites configurados.
+3. **Detalle** registro a registro, con potencia aparente (VA) y reactiva (var) calculadas.
+
+Separador `;` y coma decimal, que es lo que abre Excel en español sin pedir nada.
+
+**Dispositivo y Wi-Fi**
+
+La tarjeta de abajo muestra a qué red está conectado el ESP32, con qué señal, su IP, su MAC, hace
+cuánto está encendido y qué versión de firmware corre.
+
+Desde ahí también se le puede **dejar una red preparada** sin desmontarlo ni abrir el IDE de
+Arduino: el equipo la revisa cada minuto, la prueba, y si no funciona vuelve solo a la anterior. Y
+si no logra conectarse a ninguna red conocida, levanta su propia red `Oxynet-Bomba` con portal
+cautivo para configurarlo desde el celular parado al lado.
 
 **Modo demostración**
 
 Agregando `?demo=1` a la URL, la app genera datos sintéticos. Sirve para ver la interfaz sin el
 ESP32 encendido, o para verificar que el deploy quedó bien antes de conectar la base.
 
----
+**Tema**
+
+Claro, oscuro o automático según el sistema. La paleta de los gráficos está validada para daltonismo
+y contraste en los dos modos (ver más abajo).
 
 ## Puesta en marcha local
 
@@ -102,23 +137,25 @@ variable:
 `.firebasedatabase.app` si la base es regional), **no** el enlace de la consola que empieza con
 `https://console.firebase.google.com/...`.
 
-### Umbrales
+### Umbrales de fábrica
 
-Se ajustan también por variables de entorno, sin tocar código:
+Son el punto de partida que ve alguien que abre el panel por primera vez; después cada uno los
+edita desde la app. Se configuran por variables de entorno:
 
 | Variable | Por defecto | Qué es |
 |---|---|---|
 | `VITE_TENSION_NOMINAL` | 220 | Tensión nominal de referencia |
 | `VITE_TENSION_MIN` / `VITE_TENSION_MAX` | 198 / 242 | Rango admitido (±10 %) |
 | `VITE_CORRIENTE_MAX` | 12 | Corriente máxima admitida, en A |
+| `VITE_POTENCIA_MAX` | 2500 | Potencia máxima admitida, en W |
 | `VITE_COSFI_MIN` | 0.7 | cos φ mínimo esperado con la bomba en marcha |
 | `VITE_POTENCIA_APAGADA` | 15 | Por debajo de estos W se considera la bomba detenida |
 | `VITE_DB_ROOT` | `/bomba_oxigeno` | Nodo raíz donde escribe el ESP32 |
 
-Los valores por defecto son razonables para 220 V, pero **conviene ajustar `VITE_CORRIENTE_MAX` a la
-chapa del motor**: la corriente nominal más un margen del 10-15 %, no un número inventado.
+**`VITE_CORRIENTE_MAX` conviene ajustarlo a la chapa del motor**: la corriente nominal más un margen
+del 10-15 %, no un número inventado. Lo mismo con `VITE_POTENCIA_MAX`.
 
----
+Una variable cargada pero vacía cuenta como ausente y cae al valor por defecto.
 
 ## Reglas de la base
 
@@ -132,6 +169,12 @@ En `firebase/` hay dos variantes:
 
 En las dos hay que reemplazar `UID_DEL_ESP32` por el UID real, que se ve en
 **Authentication → Users**.
+
+Sobre el nodo `wifi_solicitado`, donde el panel deja la red preparada: las reglas permiten
+**escribirlo pero no leerlo**, salvo al UID del ESP32. Así la clave del Wi-Fi no se recupera desde el
+panel ni desde la consola de nadie que entre a mirar, y el dispositivo la borra apenas la copia a su
+memoria. Aun así, cualquiera con acceso al panel puede reemplazar la red del equipo — si eso
+molesta, sacá el bloque `wifi_solicitado` de las reglas y el formulario deja de funcionar.
 
 Si el inicio de sesión anónimo está deshabilitado, la app no se rompe: avisa con una nota y sigue
 leyendo sin sesión, que es lo correcto con las reglas de lectura pública.
@@ -182,26 +225,54 @@ viendo, así que dice sola dónde está el problema. Las causas, en orden de fre
 
 ## Firmware
 
-`firmware/oxynet_esp32/oxynet_esp32.ino` es el sketch original con estos arreglos:
+`firmware/oxynet_esp32/oxynet_esp32.ino`, versión 2.0.0.
+
+### Qué se arregló del sketch original
 
 1. **`DATABASE_URL` correcta.** El `FIREBASE_HOST` que teníamos era el enlace de la consola web
    (`https://console.firebase.google.com/project/...`), no la URL de la base. Con eso la librería no
-   podía conectarse a ningún lado.
-2. **Autenticación con usuario y contraseña** en lugar del database secret (ver arriba).
+   podía conectarse a ningún lado, y por eso la base nunca recibió un dato.
+2. **Autenticación con usuario y contraseña** en lugar del database secret.
 3. **Espera de NTP en el `setup()`.** Antes, si el reloj no había sincronizado, `getUnixTime()`
-   devolvía 0 y `ultima_medicion` se escribía con `timestamp: 0`. El historial estaba protegido, pero
-   la medición en vivo no.
+   devolvía 0 y `ultima_medicion` se escribía con `timestamp: 0`.
 4. **Reconexión de Wi-Fi.** El `while` del `setup()` original bloqueaba para siempre si la red no
    aparecía, y una caída posterior dejaba al ESP32 mudo hasta un reset manual.
-5. **Validación de `energy()`**, que también puede devolver NaN y no estaba contemplada.
+5. **Validación de `energy()`**, que también puede devolver NaN.
 6. **`millis()` con resta de unsigned**, que sobrevive al desbordamiento a los ~49 días.
 
-Librerías necesarias, desde el gestor del IDE de Arduino:
+### Wi-Fi sin tocar el código
+
+El SSID y la clave ya no están escritos en el sketch. El arranque hace esto, en orden:
+
+1. Si el panel dejó una red preparada, la prueba primero (20 s de gracia).
+2. Si no anda, usa las credenciales que ya tenía guardadas.
+3. Si tampoco, levanta la red **`Oxynet-Bomba`** (clave `oxynet1234`) con un portal cautivo: te
+   conectás desde el celular, elegís la red y listo.
+
+El portal tiene un timeout de 3 minutos a propósito. Un equipo esperando configuración para siempre
+es un equipo muerto si el corte de internet era pasajero; con timeout, vuelve a intentar solo.
+
+El cambio pedido desde el panel se guarda en la memoria del ESP32 y se reinicia. La marca de
+"pendiente" se borra **antes** de probar la red nueva, así un SSID que cuelgue el equipo no lo deja
+en un bucle de reinicios: al segundo arranque ya cae a la red anterior.
+
+### Configuración
+
+Cinco líneas arriba de todo del sketch:
+
+```cpp
+#define DATABASE_URL    "https://oxynet-monitoreo-bomba-default-rtdb.firebaseio.com"
+#define API_KEY         "la misma AIza... que va en Vercel"
+#define USER_EMAIL      "esp32-bomba@oxynet.local"
+#define USER_PASSWORD   "la clave del usuario del dispositivo"
+#define NODO_RAIZ       "/bomba_oxigeno"
+```
+
+Librerías, desde el gestor del IDE de Arduino:
 
 - *Firebase ESP32 Client* (Mobizt) ≥ 4.3
 - *PZEM004Tv30* (mandulaj) ≥ 1.1
-
----
+- *WiFiManager* (tzapu) ≥ 2.0.17
 
 ## Estructura de los datos
 
@@ -220,10 +291,25 @@ Librerías necesarias, desde el gestor del IDE de Arduino:
           i:  7.83
           p:  1421.7
           fp: 0.82
+  /estado_dispositivo       <- el ESP32 se describe a sí mismo, cada minuto
+      ssid: "Oxynet-Taller"
+      rssi: -58              (dBm)
+      ip:   "192.168.1.47"
+      mac:  "A0:B7:65:2C:11:9E"
+      uptime_s: 69300
+      firmware: "oxynet-esp32 2.0.0"
+      intervalo_ms: 5000
+      timestamp: 1756209600
+  /wifi_solicitado          <- lo escribe el panel; solo el ESP32 puede leerlo
+      ssid:  "Red-Nueva"
+      clave: "..."
+      solicitado_en: 1756209600000
 ```
 
-El panel consulta el historial con `orderByKey()` + `startAt()`, que aprovecha el índice natural de
-las claves: no hace falta declarar ningún `.indexOn`.
+El panel pide los últimos N registros con `orderByKey()` + `limitToLast()` y recorta la ventana en
+el cliente. Se evitó `startAt()` a propósito: las claves son el epoch en segundos, que la Realtime
+Database indexa como enteros, y el filtro por clave no se comportaba de forma predecible. Filtrar en
+el cliente cuesta lo mismo en descarga y es exacto. No hace falta declarar ningún `.indexOn`.
 
 ---
 
@@ -267,3 +353,22 @@ está mostrando el tramo más reciente en vez de fingir que tiene la ventana com
 | `npm run dev` | Servidor de desarrollo con recarga en caliente |
 | `npm run build` | Chequeo de tipos + build de producción en `dist/` |
 | `npm run preview` | Sirve `dist/` para probar el build antes de desplegar |
+
+---
+
+## Sobre los colores
+
+Los cuatro tonos de las series (teal, ámbar, azul, magenta) no se eligieron a ojo. Se buscaron por
+fuerza bruta sobre el espacio OKLCH y se validaron contra las dos superficies reales de la app:
+
+- Todos los pares se distinguen bajo protanopía y deuteranopía (peor par ΔE 8.1 en claro, 8.1 en
+  oscuro; el objetivo es 8).
+- Todos superan 3:1 de contraste contra su fondo, en claro y en oscuro — sin depender de la
+  excepción de "poner etiquetas visibles".
+- La versión oscura no es un volteo automático de la clara: son tonos re-escalonados para el fondo
+  oscuro y validados como conjunto aparte.
+
+Los colores de estado (verde/ámbar/naranja/rojo) están reservados para eso y nunca se usan como
+color de serie. Van siempre con ícono y texto, así que ninguno depende del color solo.
+
+Si cambiás un hex de `src/styles.css`, volvé a correr esa validación antes de darlo por bueno.

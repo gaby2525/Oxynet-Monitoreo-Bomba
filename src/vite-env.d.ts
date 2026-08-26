@@ -13,6 +13,7 @@ interface ImportMetaEnv {
   readonly VITE_TENSION_MIN?: string;
   readonly VITE_TENSION_MAX?: string;
   readonly VITE_CORRIENTE_MAX?: string;
+  readonly VITE_POTENCIA_MAX?: string;
   readonly VITE_COSFI_MIN?: string;
   readonly VITE_POTENCIA_APAGADA?: string;
 }

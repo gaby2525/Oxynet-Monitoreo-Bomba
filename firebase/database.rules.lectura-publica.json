@@ -2,6 +2,9 @@
   // Variante mas simple: el historial queda legible por cualquiera que conozca
   // la URL de la base, sin necesidad de habilitar el inicio de sesion anonimo.
   // Solo tiene sentido si no importa que los datos sean publicos.
+  //
+  // Ojo: aca el cambio de Wi-Fi desde el panel queda deshabilitado. Sin sesion
+  // no hay a quien darle permiso de escritura sin abrirsela a todo internet.
   "rules": {
     ".read": false,
     ".write": false,

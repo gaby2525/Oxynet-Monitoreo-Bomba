@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { off, onValue, ref } from 'firebase/database';
+import { onValue, ref } from 'firebase/database';
 import { obtenerDb } from '../lib/firebase';
 import { DB_ROOT } from '../lib/config';
 import { modoDemo, ultimaMedicionDemo } from '../lib/demo';
@@ -41,9 +41,11 @@ export function useUltimaMedicion(habilitado: boolean): Resultado {
       return;
     }
 
-    const nodo = ref(db, `${DB_ROOT}/ultima_medicion`);
-    const suscripcion = onValue(
-      nodo,
+    // onValue devuelve su propia funcion de baja: es la unica forma confiable de
+    // desuscribirse, porque `off()` compara los parametros de la consulta y no
+    // encuentra el listener si se lo llama sobre otra referencia.
+    return onValue(
+      ref(db, `${DB_ROOT}/ultima_medicion`),
       (snap) => {
         const raw = snap.val() as UltimaMedicionRaw | null;
         setCargando(false);
@@ -67,8 +69,6 @@ export function useUltimaMedicion(habilitado: boolean): Resultado {
         setError(err.message);
       },
     );
-
-    return () => off(nodo, 'value', suscripcion);
   }, [habilitado]);
 
   return { medicion, cargando, error };

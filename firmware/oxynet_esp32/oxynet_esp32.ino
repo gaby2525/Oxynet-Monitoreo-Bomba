@@ -1,35 +1,34 @@
 /* =============================================================================
  * Oxynet - Monitoreo de la bomba de oxigeno
  * ESP32 + PZEM-004T v3 -> Firebase Realtime Database
+ * Firmware 2.0.0
  *
- * Diferencias respecto del sketch original:
- *   1. FIREBASE_HOST apuntaba al enlace de la consola web. La libreria necesita
- *      la URL de la base (la que termina en .firebaseio.com o
- *      .firebasedatabase.app), que es otra cosa.
- *   2. Se reemplaza el "database secret" heredado por autenticacion con
- *      usuario/contrasena. El secreto es equivalente a una clave de
- *      administrador: quien lo tiene puede leer y borrar toda la base.
- *   3. Se espera a que sincronice el NTP antes de publicar. Antes se podia
- *      escribir 'ultima_medicion' con timestamp 0.
- *   4. Se reconecta el Wi-Fi si se cae, en vez de quedar mudo hasta un reset.
- *   5. Se valida tambien la lectura de energia (kWh), que puede venir NaN.
+ * Novedades sobre la version 1:
+ *   - El Wi-Fi ya no esta escrito a fuego en el codigo. Si el equipo no logra
+ *     conectarse, levanta su propia red "Oxynet-Bomba" con un portal cautivo
+ *     para configurarlo desde el celular parado al lado, sin desmontarlo.
+ *   - Se puede dejar una red preparada desde el panel web. El ESP32 la revisa
+ *     cada minuto, la prueba, y si no funciona vuelve solo a la anterior.
+ *   - Publica su propio estado (red, senal, IP, MAC, uptime) para que el panel
+ *     muestre a que internet esta conectado.
  *
  * Librerias (Gestor de librerias del IDE de Arduino):
  *   - Firebase ESP32 Client (Mobizt)  >= 4.3
  *   - PZEM004Tv30 (mandulaj)          >= 1.1
+ *   - WiFiManager (tzapu)             >= 2.0.17
  * ========================================================================== */
 
 #include <WiFi.h>
+#include <WiFiManager.h>
+#include <Preferences.h>
 #include <FirebaseESP32.h>
 #include <addons/TokenHelper.h>
 #include <PZEM004Tv30.h>
 #include "time.h"
 
 // =============================================================================
-// 1. Red y Firebase
+// 1. Configuracion
 // =============================================================================
-#define WIFI_SSID       "NOMBRE_DE_TU_WIFI"
-#define WIFI_PASSWORD   "CLAVE_DE_TU_WIFI"
 
 // Consola de Firebase -> Realtime Database: la URL que figura arriba de la tabla.
 #define DATABASE_URL    "https://oxynet-monitoreo-bomba-default-rtdb.firebaseio.com"
@@ -42,6 +41,11 @@
 #define USER_PASSWORD   "PEGAR_LA_CLAVE_DEL_USUARIO"
 
 #define NODO_RAIZ       "/bomba_oxigeno"
+#define VERSION_FIRMWARE "oxynet-esp32 2.0.0"
+
+// Red que levanta el equipo cuando no puede conectarse a ninguna conocida.
+#define AP_NOMBRE       "Oxynet-Bomba"
+#define AP_CLAVE        "oxynet1234"   // minimo 8 caracteres
 
 const char* ntpServer = "pool.ntp.org";
 
@@ -52,36 +56,32 @@ const char* ntpServer = "pool.ntp.org";
 #define TXD2 17   // Serial2 TX del ESP32
 
 PZEM004Tv30 pzem(Serial2, RXD2, TXD2);
-FirebaseData firebaseData;
+FirebaseData fbDatos;      // para escribir mediciones
+FirebaseData fbConfig;     // para leer la red solicitada, en su propia sesion
 FirebaseAuth auth;
 FirebaseConfig config;
+Preferences prefs;
 
-const unsigned long INTERVALO_MS = 5000;   // periodo de publicacion
-unsigned long ultimoEnvio = 0;
-unsigned long ultimoIntentoWifi = 0;
+const unsigned long INTERVALO_MEDICION_MS = 5000;    // publicacion de mediciones
+const unsigned long INTERVALO_ESTADO_MS   = 60000;   // reporte de estado propio
+const unsigned long INTERVALO_WIFI_MS     = 60000;   // revision de red solicitada
+const unsigned long ESPERA_PORTAL_S       = 180;     // el portal no bloquea para siempre
+const unsigned long ESPERA_CONEXION_MS    = 20000;   // para probar una red nueva
+
+unsigned long ultimaMedicion = 0;
+unsigned long ultimoEstado = 0;
+unsigned long ultimaRevisionWifi = 0;
 
 // =============================================================================
 // 3. Utilidades
 // =============================================================================
 
-// Devuelve el epoch Unix en segundos, o 0 si el reloj todavia no sincronizo.
+// Epoch Unix en segundos, o 0 si el reloj todavia no sincronizo.
 unsigned long obtenerEpoch() {
   time_t ahora;
   time(&ahora);
-  // Antes de sincronizar con NTP el reloj arranca en 1970; 2020-01-01 sirve de corte.
+  // Antes de sincronizar con NTP el reloj arranca en 1970; 2020-01-01 corta bien.
   return (ahora > 1577836800UL) ? (unsigned long)ahora : 0UL;
-}
-
-void conectarWifi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Conectando a Wi-Fi");
-  unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 30000) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println(WiFi.status() == WL_CONNECTED ? "\nWi-Fi conectado." : "\nNo se pudo conectar.");
 }
 
 void esperarNtp() {
@@ -95,49 +95,134 @@ void esperarNtp() {
   Serial.println(obtenerEpoch() ? "\nHora sincronizada." : "\nSin NTP: se reintenta en el loop.");
 }
 
-// =============================================================================
-// 4. Setup
-// =============================================================================
-void setup() {
-  Serial.begin(115200);
+/**
+ * Intenta una red puntual. Devuelve true si engancho antes del timeout.
+ * Se usa para probar la red que llego desde el panel, sin perder la actual
+ * hasta saber que la nueva anda.
+ */
+bool conectarA(const String& ssid, const String& clave) {
+  Serial.printf("Probando la red \"%s\"...\n", ssid.c_str());
+  WiFi.disconnect(true);
+  delay(200);
+  WiFi.begin(ssid.c_str(), clave.c_str());
 
-  conectarWifi();
-  esperarNtp();
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < ESPERA_CONEXION_MS) {
+    delay(400);
+    Serial.print(".");
+  }
+  Serial.println();
+  return WiFi.status() == WL_CONNECTED;
+}
 
-  config.database_url = DATABASE_URL;
-  config.api_key = API_KEY;
-  auth.user.email = USER_EMAIL;
-  auth.user.password = USER_PASSWORD;
-  config.token_status_callback = tokenStatusCallback;   // viene de TokenHelper.h
+/**
+ * Conexion de arranque.
+ *
+ * 1. Si el panel dejo una red pendiente, se prueba primero.
+ * 2. Si no anda (o no habia), WiFiManager usa las credenciales guardadas.
+ * 3. Si tampoco, levanta el portal cautivo. El portal tiene timeout a proposito:
+ *    un equipo que quedo esperando configuracion para siempre es un equipo
+ *    muerto si el corte de internet fue pasajero.
+ */
+void conectarWifi() {
+  prefs.begin("oxynet", false);
+  String pendienteSsid = prefs.getString("ssid", "");
+  String pendienteClave = prefs.getString("clave", "");
+  bool hayPendiente = prefs.getBool("pendiente", false);
 
-  Firebase.begin(&config, &auth);
-  Firebase.reconnectWiFi(true);
-  firebaseData.setBSSLBufferSize(2048, 1024);
+  if (hayPendiente && pendienteSsid.length() > 0) {
+    // Se limpia la marca ANTES de probar: si la red nueva cuelga el equipo y se
+    // reinicia, no queremos quedar en un bucle intentando lo mismo.
+    prefs.putBool("pendiente", false);
+    if (conectarA(pendienteSsid, pendienteClave)) {
+      Serial.printf("Conectado a la red nueva: %s\n", WiFi.SSID().c_str());
+      prefs.end();
+      return;
+    }
+    Serial.println("La red nueva no respondio; se vuelve a la anterior.");
+  }
+  prefs.end();
 
-  Serial.println("Sistema listo para monitoreo.");
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(ESPERA_PORTAL_S);
+  wm.setConnectTimeout(20);
+
+  if (!wm.autoConnect(AP_NOMBRE, AP_CLAVE)) {
+    Serial.println("Sin conexion tras el portal. Se reinicia para reintentar.");
+    delay(1000);
+    ESP.restart();
+  }
+  Serial.printf("Wi-Fi conectado a %s (IP %s)\n",
+                WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
 // =============================================================================
-// 5. Loop
+// 4. Publicaciones
 // =============================================================================
-void loop() {
-  // Reconexion de Wi-Fi sin bloquear el resto del loop.
-  if (WiFi.status() != WL_CONNECTED && millis() - ultimoIntentoWifi > 10000) {
-    ultimoIntentoWifi = millis();
-    Serial.println("Wi-Fi caido, reconectando...");
-    WiFi.disconnect();
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+void publicarEstado() {
+  if (!Firebase.ready()) return;
+
+  FirebaseJson estado;
+  estado.set("ssid", WiFi.SSID());
+  estado.set("rssi", (int)WiFi.RSSI());
+  estado.set("ip", WiFi.localIP().toString());
+  estado.set("mac", WiFi.macAddress());
+  estado.set("uptime_s", (double)(millis() / 1000));
+  estado.set("firmware", VERSION_FIRMWARE);
+  estado.set("intervalo_ms", (double)INTERVALO_MEDICION_MS);
+  estado.set("timestamp", (double)obtenerEpoch());
+  estado.set("wifi_aplicado", WiFi.SSID());
+
+  if (!Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/estado_dispositivo", estado)) {
+    Serial.print("Error publicando estado: ");
+    Serial.println(fbDatos.errorReason());
+  }
+}
+
+/**
+ * Revisa si el panel dejo una red preparada. La guarda en NVS y reinicia: la
+ * secuencia de arranque ya sabe probarla y volver atras sola si no funciona.
+ */
+void revisarWifiSolicitado() {
+  if (!Firebase.ready()) return;
+
+  String ruta = String(NODO_RAIZ) + "/wifi_solicitado";
+  if (!Firebase.getJSON(fbConfig, ruta)) return;   // no existe: nada que hacer
+
+  FirebaseJson& json = fbConfig.jsonObject();
+  FirebaseJsonData campo;
+
+  String nuevoSsid = "";
+  String nuevaClave = "";
+  if (json.get(campo, "ssid")) nuevoSsid = campo.stringValue;
+  if (json.get(campo, "clave")) nuevaClave = campo.stringValue;
+
+  if (nuevoSsid.length() == 0) return;
+
+  if (nuevoSsid == WiFi.SSID()) {
+    // Ya estamos en esa red: se borra el pedido para no repetirlo.
+    Firebase.deleteNode(fbConfig, ruta);
     return;
   }
 
-  if (millis() - ultimoEnvio < INTERVALO_MS) return;
-  ultimoEnvio = millis();
+  Serial.printf("El panel pidio cambiar a la red \"%s\". Guardando y reiniciando.\n",
+                nuevoSsid.c_str());
 
-  if (!Firebase.ready()) {
-    Serial.println("Firebase todavia no esta listo (token en tramite).");
-    return;
-  }
+  prefs.begin("oxynet", false);
+  prefs.putString("ssid", nuevoSsid);
+  prefs.putString("clave", nuevaClave);
+  prefs.putBool("pendiente", true);
+  prefs.end();
 
+  // Se borra el pedido antes de reiniciar: ya quedo copiado en la memoria del
+  // equipo, y asi la clave no se queda dando vueltas en la base.
+  Firebase.deleteNode(fbConfig, ruta);
+  delay(500);
+  ESP.restart();
+}
+
+void publicarMedicion() {
   float tension   = pzem.voltage();
   float corriente = pzem.current();
   float potencia  = pzem.power();
@@ -165,11 +250,9 @@ void loop() {
   ultima.set("cosfi", cosfi);
   ultima.set("kwh", energia);
 
-  if (Firebase.setJSON(firebaseData, String(NODO_RAIZ) + "/ultima_medicion", ultima)) {
-    Serial.println("-> ultima_medicion actualizada.");
-  } else {
+  if (!Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/ultima_medicion", ultima)) {
     Serial.print("Error en ultima_medicion: ");
-    Serial.println(firebaseData.errorReason());
+    Serial.println(fbDatos.errorReason());
   }
 
   // 2. historial: un hijo por timestamp, con claves cortas para gastar menos.
@@ -180,10 +263,65 @@ void loop() {
   punto.set("fp", cosfi);
 
   String rutaHistorial = String(NODO_RAIZ) + "/historial/" + String(timestamp);
-  if (Firebase.setJSON(firebaseData, rutaHistorial, punto)) {
-    Serial.println("-> Registro guardado en historial.");
-  } else {
+  if (!Firebase.setJSON(fbDatos, rutaHistorial, punto)) {
     Serial.print("Error en historial: ");
-    Serial.println(firebaseData.errorReason());
+    Serial.println(fbDatos.errorReason());
+  }
+}
+
+// =============================================================================
+// 5. Setup y loop
+// =============================================================================
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+  Serial.println("\n=== " VERSION_FIRMWARE " ===");
+
+  conectarWifi();
+  esperarNtp();
+
+  config.database_url = DATABASE_URL;
+  config.api_key = API_KEY;
+  auth.user.email = USER_EMAIL;
+  auth.user.password = USER_PASSWORD;
+  config.token_status_callback = tokenStatusCallback;   // viene de TokenHelper.h
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  fbDatos.setBSSLBufferSize(2048, 1024);
+  fbConfig.setBSSLBufferSize(2048, 1024);
+
+  Serial.println("Sistema listo para monitoreo.");
+}
+
+void loop() {
+  // Con el Wi-Fi caido no tiene sentido hablar con Firebase. WiFiManager dejo
+  // las credenciales guardadas, asi que el reintento es barato.
+  if (WiFi.status() != WL_CONNECTED) {
+    static unsigned long ultimoIntento = 0;
+    if (millis() - ultimoIntento > 10000) {
+      ultimoIntento = millis();
+      Serial.println("Wi-Fi caido, reconectando...");
+      WiFi.reconnect();
+    }
+    return;
+  }
+
+  unsigned long ahora = millis();
+
+  if (ahora - ultimaMedicion >= INTERVALO_MEDICION_MS) {
+    ultimaMedicion = ahora;
+    if (Firebase.ready()) publicarMedicion();
+    else Serial.println("Firebase todavia no esta listo (token en tramite).");
+  }
+
+  if (ahora - ultimoEstado >= INTERVALO_ESTADO_MS) {
+    ultimoEstado = ahora;
+    publicarEstado();
+  }
+
+  if (ahora - ultimaRevisionWifi >= INTERVALO_WIFI_MS) {
+    ultimaRevisionWifi = ahora;
+    revisarWifiSolicitado();
   }
 }

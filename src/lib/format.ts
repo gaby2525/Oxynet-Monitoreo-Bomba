@@ -62,3 +62,12 @@ export function duracion(segundos: number): string {
   if (m > 0) return `${m} min`;
   return `${Math.round(segundos)} s`;
 }
+
+/** Porcentaje a partir de una fraccion 0..1. */
+export function porcentaje(fraccion: number | null, decimales = 0): string {
+  if (fraccion === null || !Number.isFinite(fraccion)) return '—';
+  return `${(fraccion * 100).toLocaleString(locale, {
+    minimumFractionDigits: decimales,
+    maximumFractionDigits: decimales,
+  })} %`;
+}

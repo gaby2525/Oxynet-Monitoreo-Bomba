@@ -7,13 +7,12 @@ import type { Tema } from './useTema';
  * hex: el CSS sigue siendo la unica fuente de verdad de la paleta.
  */
 export interface ColoresGrafico {
-  serie: string;
-  serieSuave: string;
+  series: [string, string, string, string];
+  seriesSuaves: [string, string, string, string];
   grilla: string;
   eje: string;
   muted: string;
   critico: string;
-  aviso: string;
   superficie: string;
 }
 
@@ -22,14 +21,23 @@ function leer(): ColoresGrafico {
   const v = (nombre: string, alternativa: string) =>
     estilo.getPropertyValue(nombre).trim() || alternativa;
   return {
-    serie: v('--serie-1', '#2a78d6'),
-    serieSuave: v('--serie-1-suave', 'rgba(42,120,214,0.14)'),
-    grilla: v('--grilla', '#e1e0d9'),
-    eje: v('--eje', '#c3c2b7'),
-    muted: v('--tinta-muted', '#898781'),
+    series: [
+      v('--serie-1', '#098356'),
+      v('--serie-2', '#ac5107'),
+      v('--serie-3', '#0271c2'),
+      v('--serie-4', '#a0459a'),
+    ],
+    seriesSuaves: [
+      v('--serie-1-suave', 'rgba(9,131,86,0.14)'),
+      v('--serie-2-suave', 'rgba(172,81,7,0.14)'),
+      v('--serie-3-suave', 'rgba(2,113,194,0.14)'),
+      v('--serie-4-suave', 'rgba(160,69,154,0.14)'),
+    ],
+    grilla: v('--grilla', '#e6e9ec'),
+    eje: v('--eje', '#ccd2d8'),
+    muted: v('--tinta-3', '#78848f'),
     critico: v('--critico', '#d03b3b'),
-    aviso: v('--aviso', '#fab219'),
-    superficie: v('--superficie', '#fcfcfb'),
+    superficie: v('--superficie', '#ffffff'),
   };
 }
 

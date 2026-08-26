@@ -139,11 +139,16 @@ export const DB_ROOT = (() => {
   return crudo.startsWith('/') ? crudo : `/${crudo}`;
 })();
 
-export const umbrales = {
+/**
+ * Umbrales de fabrica. Son el punto de partida: la app deja editarlos y guarda
+ * los cambios en el navegador de cada uno (ver `lib/umbrales.ts`).
+ */
+export const umbralesPorDefecto = {
   tensionNominal: num(import.meta.env.VITE_TENSION_NOMINAL, 220),
   tensionMin: num(import.meta.env.VITE_TENSION_MIN, 198),
   tensionMax: num(import.meta.env.VITE_TENSION_MAX, 242),
   corrienteMax: num(import.meta.env.VITE_CORRIENTE_MAX, 12),
+  potenciaMax: num(import.meta.env.VITE_POTENCIA_MAX, 2500),
   cosfiMin: num(import.meta.env.VITE_COSFI_MIN, 0.7),
   potenciaApagada: num(import.meta.env.VITE_POTENCIA_APAGADA, 15),
 };

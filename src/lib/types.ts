@@ -55,3 +55,35 @@ export interface Alarma {
 export type ClaveMetrica = 'tension' | 'corriente' | 'potencia' | 'cosfi';
 
 export type EstadoConexion = 'conectando' | 'en-vivo' | 'desactualizado' | 'sin-datos' | 'error';
+
+/** Nodo `/<root>/estado_dispositivo`: lo publica el ESP32 en cada arranque y cada minuto. */
+export interface EstadoDispositivoRaw {
+  ssid?: string;
+  rssi?: number;
+  ip?: string;
+  mac?: string;
+  uptime_s?: number;
+  firmware?: string;
+  intervalo_ms?: number;
+  ultimo_boot?: number;
+  timestamp?: number;
+  /** Eco de la red que se le pidio aplicar, para saber si ya la tomo. */
+  wifi_aplicado?: string;
+}
+
+export interface EstadoDispositivo {
+  ssid: string;
+  /** Potencia de senal en dBm; 0 si el firmware no la informa. */
+  rssi: number;
+  ip: string;
+  mac: string;
+  uptimeS: number;
+  firmware: string;
+  intervaloMs: number;
+  /** Momento del ultimo reporte, en milisegundos. */
+  ms: number;
+  wifiAplicado: string;
+}
+
+/** Calidad de senal derivada del RSSI, para no mostrar dBm pelados. */
+export type CalidadSenal = 'excelente' | 'buena' | 'regular' | 'debil' | 'desconocida';
