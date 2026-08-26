@@ -1,0 +1,42 @@
+{
+  // Reglas de la Realtime Database.
+  // Consola de Firebase -> Realtime Database -> pestana "Reglas" -> pegar y publicar.
+  //
+  // Lectura: cualquier sesion iniciada (el panel web entra de forma anonima).
+  // Escritura: solo el usuario del ESP32.
+  //
+  // Reemplazar UID_DEL_ESP32 por el UID que aparece en
+  // Authentication -> Users, en la fila del usuario del dispositivo.
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "bomba_oxigeno": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.uid === 'UID_DEL_ESP32'",
+
+      "ultima_medicion": {
+        ".validate": "newData.hasChildren(['timestamp', 'tension', 'corriente', 'potencia', 'cosfi'])",
+        "timestamp": { ".validate": "newData.isNumber() && newData.val() > 1577836800" },
+        "tension":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+        "corriente": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200" },
+        "potencia":  { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "cosfi":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+        "kwh":       { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "$otro":     { ".validate": false }
+      },
+
+      "historial": {
+        // La clave de cada registro es el epoch Unix en segundos.
+        "$timestamp": {
+          ".validate": "$timestamp.matches(/^[0-9]{10}$/)",
+          "v":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+          "i":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200" },
+          "p":     { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "fp":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+          "$otro": { ".validate": false }
+        }
+      }
+    }
+  }
+}
