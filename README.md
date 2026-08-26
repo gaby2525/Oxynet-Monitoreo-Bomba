@@ -158,8 +158,22 @@ Netlify el `netlify.toml` ya deja todo resuelto. Elegir una:
 3. En **Site configuration → Environment variables** cargar las `VITE_*`.
 4. Deploy.
 
-En las dos: **las variables de entorno se leen en el momento del build**. Si se cambia una, hay que
-volver a desplegar para que tenga efecto.
+### Si después de desplegar sigue apareciendo "Falta configurar Firebase"
+
+Esa pantalla lista **una por una** las variables y qué valor quedó dentro del build que estás
+viendo, así que dice sola dónde está el problema. Las causas, en orden de frecuencia:
+
+1. **Estás mirando un deploy viejo.** Las URLs con sufijo
+   (`oxynet-monitoreo-bomba-ilkqdsed9-usuario.vercel.app`) son inmutables: quedan congeladas con el
+   build del momento y nunca toman variables nuevas. Hay que abrir el dominio de producción, el que
+   no tiene sufijo.
+2. **Faltó redesplegar.** Las variables se leen **en el momento del build**, no en vivo. Cargarlas
+   no reconstruye nada: hay que ir a Deployments → ⋯ → Redeploy, o hacer un push nuevo.
+3. **Se cargaron en el entorno equivocado.** En Vercel conviene marcar Production, Preview y
+   Development en cada una.
+4. **El valor está mal pegado.** La app recorta espacios y comillas sobrantes sola, pero si
+   `VITE_FIREBASE_DATABASE_URL` es el enlace de la consola en vez de la URL de la base, la pantalla
+   lo marca explícitamente.
 
 Último paso, en cualquiera de las dos: agregar el dominio del sitio en Firebase, en
 **Authentication → Settings → Dominios autorizados**. Sin eso, el inicio de sesión anónimo falla.

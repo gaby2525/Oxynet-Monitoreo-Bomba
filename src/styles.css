@@ -498,6 +498,81 @@ tbody tr:hover td { background: var(--superficie-hover); }
 .setup ol { padding-left: 20px; color: var(--tinta-2); font-size: 14px; }
 .setup li { margin-bottom: 8px; }
 
+.setup h2 {
+  font-size: 15px;
+  margin: 22px 0 6px;
+}
+
+.revision {
+  /* `fixed` mas el corte por caracter evitan que una URL larga desborde la tarjeta. */
+  width: 100%;
+  table-layout: fixed;
+  margin: 18px 0 4px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-chico);
+  overflow: hidden;
+}
+
+.revision th:first-child,
+.revision td:first-child { width: 44%; }
+
+.revision th,
+.revision td {
+  /* La regla general de tablas pone nowrap; aca los valores tienen que envolver. */
+  white-space: normal;
+  word-break: break-word;
+}
+
+.revision th,
+.revision td {
+  text-align: left;
+  vertical-align: top;
+  padding: 9px 12px;
+}
+
+.revision thead th {
+  position: static;
+  background: var(--plano);
+}
+
+.revision code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.revision tbody tr:hover td { background: transparent; }
+
+.punto {
+  display: inline-block;
+  width: 15px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.punto--bien { color: var(--bueno); }
+.punto--mal { color: var(--critico); }
+.punto--aviso { color: var(--tinta-muted); }
+
+.revision__opcional {
+  margin-left: 8px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tinta-muted);
+}
+
+.revision__valor { color: var(--tinta-2); word-break: break-all; }
+
+.revision__problema {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--critico);
+}
+
+/* Una variable opcional que falta no es un error: no debe leerse como alarma. */
+.revision__problema--leve { color: var(--tinta-muted); }
+
 .setup pre {
   background: var(--plano);
   border: 1px solid var(--borde);

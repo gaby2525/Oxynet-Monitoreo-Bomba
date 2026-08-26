@@ -21,6 +21,7 @@ import {
   umbrales,
 } from './lib/config';
 import { descargarCsv, historialACsv } from './lib/csv';
+import { errorDeInicializacion } from './lib/firebase';
 import { modoDemo } from './lib/demo';
 import { numero } from './lib/format';
 import { METRICAS, alarmasActivas, severidadDe } from './lib/metricas';
@@ -111,7 +112,7 @@ export function App() {
     );
   }
 
-  const error = errorVivo ?? errorHistorial;
+  const error = errorDeInicializacion ?? errorVivo ?? errorHistorial;
 
   return (
     <div className="app">
