@@ -125,7 +125,19 @@ export function revisarConfiguracion(): RevisionVariable[] {
 export const firebaseConfigurado = !revisarConfiguracion().some((v) => v.bloquea);
 
 /** Nodo raiz donde escribe el ESP32, sin barra final. */
-export const DB_ROOT = (import.meta.env.VITE_DB_ROOT ?? '/bomba_oxigeno').replace(/\/+$/, '');
+export const RAIZ_POR_DEFECTO = '/bomba_oxigeno';
+
+/**
+ * Nodo raiz donde escribe el ESP32, normalizado: sin barra final y con barra
+ * inicial. Una variable cargada pero vacia cae al default — si no, las lecturas
+ * irian a la raiz de la base (`/ultima_medicion`) en vez de al nodo correcto, y
+ * el error que devuelve Firebase no deja claro por que.
+ */
+export const DB_ROOT = (() => {
+  const crudo = env(import.meta.env.VITE_DB_ROOT).replace(/\/+$/, '');
+  if (crudo === '' || crudo === '/') return RAIZ_POR_DEFECTO;
+  return crudo.startsWith('/') ? crudo : `/${crudo}`;
+})();
 
 export const umbrales = {
   tensionNominal: num(import.meta.env.VITE_TENSION_NOMINAL, 220),
