@@ -41,7 +41,7 @@
 #define USER_PASSWORD   "PEGAR_LA_CLAVE_DEL_USUARIO"
 
 #define NODO_RAIZ       "/bomba_oxigeno"
-#define VERSION_FIRMWARE "oxynet-esp32 2.0.0"
+#define VERSION_FIRMWARE "oxynet-esp32 2.1.0"
 
 // Red que levanta el equipo cuando no puede conectarse a ninguna conocida.
 #define AP_NOMBRE       "Oxynet-Bomba"
@@ -71,6 +71,13 @@ const unsigned long ESPERA_CONEXION_MS    = 20000;   // para probar una red nuev
 unsigned long ultimaMedicion = 0;
 unsigned long ultimoEstado = 0;
 unsigned long ultimaRevisionWifi = 0;
+
+// Salud del sensor. Se publica junto al estado para poder distinguir en el panel
+// "el ESP32 esta caido" de "el ESP32 anda pero el PZEM no contesta", que son dos
+// problemas completamente distintos y antes se veian igual.
+bool pzemOk = false;
+unsigned long pzemFallasSeguidas = 0;
+unsigned long pzemFallasTotales = 0;
 
 // =============================================================================
 // 3. Utilidades
@@ -173,6 +180,8 @@ void publicarEstado() {
   estado.set("intervalo_ms", (double)INTERVALO_MEDICION_MS);
   estado.set("timestamp", (double)obtenerEpoch());
   estado.set("wifi_aplicado", WiFi.SSID());
+  estado.set("pzem_ok", pzemOk);
+  estado.set("pzem_fallas", (double)pzemFallasTotales);
 
   if (!Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/estado_dispositivo", estado)) {
     Serial.print("Error publicando estado: ");
@@ -230,9 +239,22 @@ void publicarMedicion() {
   float energia   = pzem.energy();
 
   if (isnan(tension) || isnan(corriente) || isnan(potencia) || isnan(cosfi) || isnan(energia)) {
-    Serial.println("Error al leer el PZEM-004T (revisar cableado de Serial2 y alimentacion).");
+    pzemOk = false;
+    pzemFallasSeguidas++;
+    pzemFallasTotales++;
+    Serial.printf("El PZEM-004T no contesta (%lu seguidas). Revisar 5 V del lado TTL, GND comun y RX/TX.\n",
+                  pzemFallasSeguidas);
+
+    // Con el sensor caido no hay medicion que publicar, pero si conviene avisar
+    // enseguida: si no, el panel muestra "sin datos" como si el equipo estuviera
+    // desconectado, que es justo lo que no esta pasando.
+    if (pzemFallasSeguidas == 3) publicarEstado();
     return;
   }
+
+  if (!pzemOk) Serial.println("El PZEM-004T volvio a responder.");
+  pzemOk = true;
+  pzemFallasSeguidas = 0;
 
   unsigned long timestamp = obtenerEpoch();
   if (timestamp == 0) {

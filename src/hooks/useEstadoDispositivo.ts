@@ -53,6 +53,8 @@ export function useEstadoDispositivo(habilitado: boolean): Resultado {
           intervaloMs: numero(raw.intervalo_ms),
           ms: numero(raw.timestamp) * 1000,
           wifiAplicado: texto(raw.wifi_aplicado),
+          pzemOk: typeof raw.pzem_ok === 'boolean' ? raw.pzem_ok : null,
+          pzemFallas: numero(raw.pzem_fallas),
         });
       },
       (err) => setError(err.message),

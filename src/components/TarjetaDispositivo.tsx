@@ -114,6 +114,17 @@ export function TarjetaDispositivo({ estado, ahora }: Props) {
             estado.ms > 0 ? haceCuanto(estado.ms, ahora) : '—',
             true,
           )}
+          {estado.pzemOk !== null &&
+            dato(
+              'Sensor PZEM-004T',
+              <span className={`chip chip--${estado.pzemOk ? 'ok' : 'critical'}`}>
+                <span className="chip__icono" aria-hidden="true">
+                  {estado.pzemOk ? '✓' : '■'}
+                </span>
+                {estado.pzemOk ? 'Responde' : 'No responde'}
+              </span>,
+            )}
+          {estado.pzemFallas > 0 && dato('Fallas del sensor', String(estado.pzemFallas), true)}
         </div>
       ) : (
         <p className="metrica__pie">

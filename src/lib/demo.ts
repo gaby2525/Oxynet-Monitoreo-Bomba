@@ -74,5 +74,7 @@ export function estadoDispositivoDemo(ms: number): EstadoDispositivo {
     intervaloMs: 5000,
     ms,
     wifiAplicado: '',
+    pzemOk: true,
+    pzemFallas: 0,
   };
 }

@@ -69,6 +69,9 @@ export interface EstadoDispositivoRaw {
   timestamp?: number;
   /** Eco de la red que se le pidio aplicar, para saber si ya la tomo. */
   wifi_aplicado?: string;
+  /** `false` cuando el PZEM-004T dejo de contestar por Modbus. */
+  pzem_ok?: boolean;
+  pzem_fallas?: number;
 }
 
 export interface EstadoDispositivo {
@@ -83,6 +86,9 @@ export interface EstadoDispositivo {
   /** Momento del ultimo reporte, en milisegundos. */
   ms: number;
   wifiAplicado: string;
+  /** `null` si el firmware es viejo y no informa la salud del sensor. */
+  pzemOk: boolean | null;
+  pzemFallas: number;
 }
 
 /** Calidad de senal derivada del RSSI, para no mostrar dBm pelados. */

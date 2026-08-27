@@ -278,6 +278,40 @@ El cambio pedido desde el panel se guarda en la memoria del ESP32 y se reinicia.
 "pendiente" se borra **antes** de probar la red nueva, así un SSID que cuelgue el equipo no lo deja
 en un bucle de reinicios: al segundo arranque ya cae a la red anterior.
 
+### Si el ESP32 no manda datos
+
+Antes de tocar nada, mirá el `timestamp` de `ultima_medicion` en la consola de Firebase. Es epoch en
+segundos: si es reciente, el ESP32 está llegando a la base y el problema está en otro lado.
+
+**El panel distingue dos fallas que se parecen pero no son la misma:**
+
+| Lo que muestra | Qué pasa |
+|---|---|
+| "Hace más de 120 s que no llega una lectura" | El ESP32 no se está reportando: energía, Wi-Fi o Firebase |
+| "El ESP32 está conectado pero el PZEM-004T no responde" | El equipo está bien; el que falla es el sensor |
+
+El firmware publica la salud del sensor en `estado_dispositivo.pzem_ok`, así que esa distinción sale
+del propio dispositivo y no de una suposición.
+
+### Probar el PZEM-004T aislado
+
+`firmware/prueba_pzem/prueba_pzem.ino` lee el sensor **sin Wi-Fi ni Firebase**. Si ahí las lecturas
+salen bien, el sensor está sano y el problema está en otra parte; si fallan, no tiene sentido tocar
+nada de Firebase.
+
+Los tres síntomas y qué significan:
+
+- **`SIN RESPUESTA del modulo`** — no hay comunicación Modbus. Casi siempre es una de estas: el lado
+  TTL alimentado con 3,3 V en vez de 5 V, falta de GND común entre el ESP32 y el PZEM, RX/TX
+  cruzados al revés (GPIO16 va al **TX** del PZEM, GPIO17 al **RX**), o un Dupont flojo.
+- **Tensión correcta pero corriente en 0** — el módulo habla bien; la que no mide es la pinza.
+  Revisar que esté cerrada del todo (tiene que hacer clic), que abrace **un solo conductor** (si
+  toma fase y neutro juntos las corrientes se cancelan y siempre da 0), y que su conector esté
+  enchufado al módulo. Con la bomba parada, 0 A es lo correcto.
+- **`rst:0x1 (POWERON_RESET)` en el arranque** — el ESP32 se reinició por corte de alimentación, no
+  por software. Suele ser una fuente que no da abasto, y una fuente que se cae también hace que el
+  PZEM deje de contestar. Alimentar el ESP32 y el PZEM con una fuente de 5 V que dé al menos 1 A.
+
 ### Configuración
 
 Cinco líneas arriba de todo del sketch:

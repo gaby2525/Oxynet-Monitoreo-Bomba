@@ -30,7 +30,7 @@ import {
 import { descargarCsv, informeCsv, nombreDeArchivo } from './lib/csv';
 import { modoDemo } from './lib/demo';
 import { errorDeInicializacion } from './lib/firebase';
-import { fechaHora } from './lib/format';
+import { fechaHora, haceCuanto } from './lib/format';
 import { METRICAS, alarmasActivas, descripcionLimite, severidadDe } from './lib/metricas';
 import { RANGO_POR_DEFECTO, ventanaDe, type Rango, type Ventana } from './lib/rangos';
 import {
@@ -119,6 +119,15 @@ export function App() {
     () => (estadoConexion === 'sin-datos' ? [] : alarmasActivas(medicion, umbrales)),
     [medicion, umbrales, estadoConexion],
   );
+
+  // El ESP32 sigue reportandose pero el sensor no contesta: no es lo mismo que
+  // un equipo desconectado, y confundirlos manda a buscar el problema al lado
+  // equivocado.
+  const sensorCaido =
+    dispositivo !== null &&
+    dispositivo.pzemOk === false &&
+    dispositivo.ms > 0 &&
+    (ahoraFino - dispositivo.ms) / 1000 < 300;
 
   const etiquetaRango =
     rango.ms === null
@@ -223,10 +232,22 @@ export function App() {
                 <span className="nota__icono" aria-hidden="true">
                   ▲
                 </span>
-                <span>
-                  Hace mas de {SEGUNDOS_PARA_SIN_DATOS} s que no llega una lectura nueva. Revisar que
-                  el ESP32 tenga energia y Wi-Fi; los graficos siguen mostrando lo ultimo registrado.
-                </span>
+                {sensorCaido ? (
+                  <span>
+                    <b>El ESP32 esta conectado pero el PZEM-004T no responde.</b> El equipo sigue
+                    reportandose (
+                    {dispositivo && dispositivo.ms > 0 ? haceCuanto(dispositivo.ms, ahoraFino) : 'hace poco'}
+                    ), asi que no es la red ni Firebase: es el sensor. Revisar los 5 V del lado TTL,
+                    que haya GND comun con el ESP32, y que RX/TX no esten cruzados. En el repo hay un
+                    sketch <code>firmware/prueba_pzem</code> que lo prueba solo, sin Wi-Fi.
+                  </span>
+                ) : (
+                  <span>
+                    Hace mas de {SEGUNDOS_PARA_SIN_DATOS} s que no llega una lectura nueva. Revisar
+                    que el ESP32 tenga energia y Wi-Fi; los graficos siguen mostrando lo ultimo
+                    registrado.
+                  </span>
+                )}
               </div>
             )}
 
