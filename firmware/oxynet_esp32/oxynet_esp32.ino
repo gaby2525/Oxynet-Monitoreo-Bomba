@@ -1,16 +1,16 @@
 /* =============================================================================
  * Oxynet - Monitoreo de la bomba de oxigeno
  * ESP32 + PZEM-004T v3 -> Firebase Realtime Database
- * Firmware 2.0.0
+ * Firmware 2.2.0
  *
- * Novedades sobre la version 1:
- *   - El Wi-Fi ya no esta escrito a fuego en el codigo. Si el equipo no logra
- *     conectarse, levanta su propia red "Oxynet-Bomba" con un portal cautivo
- *     para configurarlo desde el celular parado al lado, sin desmontarlo.
- *   - Se puede dejar una red preparada desde el panel web. El ESP32 la revisa
- *     cada minuto, la prueba, y si no funciona vuelve solo a la anterior.
- *   - Publica su propio estado (red, senal, IP, MAC, uptime) para que el panel
- *     muestre a que internet esta conectado.
+ * Mantiene el buffer en Flash (si se cae el Wi-Fi, las mediciones se guardan y
+ * se suben cuando vuelve) y le suma:
+ *   - Senal de vida aunque el PZEM no conteste, para poder distinguir en el
+ *     panel "el equipo esta caido" de "el sensor no responde".
+ *   - Autenticacion con usuario y contrasena en lugar del database secret.
+ *   - Espera de NTP antes de publicar, y chequeo del resultado de cada escritura.
+ *   - Wi-Fi configurable sin recompilar: portal cautivo y cambio desde el panel.
+ *   - Subida del buffer por lotes, para no bloquear el loop varios minutos.
  *
  * Librerias (Gestor de librerias del IDE de Arduino):
  *   - Firebase ESP32 Client (Mobizt)  >= 4.3
@@ -21,6 +21,7 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 #include <FirebaseESP32.h>
 #include <addons/TokenHelper.h>
 #include <PZEM004Tv30.h>
@@ -41,7 +42,15 @@
 #define USER_PASSWORD   "PEGAR_LA_CLAVE_DEL_USUARIO"
 
 #define NODO_RAIZ       "/bomba_oxigeno"
-#define VERSION_FIRMWARE "oxynet-esp32 2.1.0"
+#define VERSION_FIRMWARE "oxynet-esp32 2.2.0"
+
+/*
+ * Red de respaldo, opcional. Se usa solo si el equipo no tiene ninguna red
+ * guardada en su memoria (por ejemplo la primera vez que se programa). Dejar
+ * las dos cadenas vacias para depender unicamente del portal cautivo.
+ */
+#define WIFI_SSID_RESPALDO     ""
+#define WIFI_PASSWORD_RESPALDO ""
 
 // Red que levanta el equipo cuando no puede conectarse a ninguna conocida.
 #define AP_NOMBRE       "Oxynet-Bomba"
@@ -49,50 +58,55 @@
 
 const char* ntpServer = "pool.ntp.org";
 
-// =============================================================================
-// 2. Pines y objetos
-// =============================================================================
 /*
  * Pines del UART2 hacia el PZEM-004T.
  *
  * En el ESP32 el UART2 no esta atado a ningun pin fijo: la matriz de GPIO lo
- * mapea a casi cualquiera. Si con 16/17 el modulo no contesta, correr el sketch
+ * mapea a casi cualquiera. Si el modulo no contesta, correr el sketch
  * `firmware/prueba_pzem`, que busca la combinacion que funciona y la imprime.
  *
- * Dos advertencias:
- *   - En modulos WROVER los GPIO 16 y 17 los ocupa la PSRAM y no sirven; ahi
- *     conviene 25 y 26.
- *   - RX va cruzado: RXD2 del ESP32 al TX del PZEM, y TXD2 al RX del PZEM.
+ * RX va cruzado: RXD2 del ESP32 al TX del PZEM, y TXD2 al RX del PZEM.
+ * En modulos WROVER los GPIO 16 y 17 los ocupa la PSRAM y no sirven.
  */
-#define RXD2 16   // Serial2 RX del ESP32  <- TX del PZEM
-#define TXD2 17   // Serial2 TX del ESP32  -> RX del PZEM
+#define RXD2 18   // Serial2 RX del ESP32  <- TX del PZEM
+#define TXD2 19   // Serial2 TX del ESP32  -> RX del PZEM
 
+// =============================================================================
+// 2. Objetos y estado
+// =============================================================================
 PZEM004Tv30 pzem(Serial2, RXD2, TXD2);
-FirebaseData fbDatos;      // para escribir mediciones
-FirebaseData fbConfig;     // para leer la red solicitada, en su propia sesion
+FirebaseData fbDatos;      // escritura de mediciones
+FirebaseData fbConfig;     // lectura de la red solicitada, en su propia sesion
 FirebaseAuth auth;
 FirebaseConfig config;
 Preferences prefs;
 
-const unsigned long INTERVALO_MEDICION_MS = 5000;    // publicacion de mediciones
-const unsigned long INTERVALO_ESTADO_MS   = 60000;   // reporte de estado propio
-const unsigned long INTERVALO_WIFI_MS     = 60000;   // revision de red solicitada
-const unsigned long ESPERA_PORTAL_S       = 180;     // el portal no bloquea para siempre
-const unsigned long ESPERA_CONEXION_MS    = 20000;   // para probar una red nueva
+const unsigned long INTERVALO_MEDICION_MS = 5000;
+const unsigned long INTERVALO_ESTADO_MS   = 60000;
+const unsigned long INTERVALO_WIFI_MS     = 60000;
+const unsigned long ESPERA_PORTAL_S       = 180;
+const unsigned long ESPERA_CONEXION_MS    = 20000;
+
+#define ARCHIVO_BUFFER  "/offline_data.txt"
+// Cuantos registros pendientes se suben por pasada. Subir todo de una dejaba el
+// loop bloqueado varios minutos tras una caida larga, y con eso se perdian
+// mediciones nuevas y saltaba el watchdog.
+const int LOTE_SUBIDA = 25;
+// Tope del buffer. A 5 s son unas 14 horas; pasado eso se descarta lo mas viejo.
+const size_t MAX_BUFFER_BYTES = 300 * 1024;
 
 unsigned long ultimaMedicion = 0;
 unsigned long ultimoEstado = 0;
 unsigned long ultimaRevisionWifi = 0;
+unsigned long ultimoIntentoWifi = 0;
 
-// Salud del sensor. Se publica junto al estado para poder distinguir en el panel
-// "el ESP32 esta caido" de "el ESP32 anda pero el PZEM no contesta", que son dos
-// problemas completamente distintos y antes se veian igual.
 bool pzemOk = false;
 unsigned long pzemFallasSeguidas = 0;
 unsigned long pzemFallasTotales = 0;
+unsigned long registrosPendientes = 0;
 
 // =============================================================================
-// 3. Utilidades
+// 3. Tiempo
 // =============================================================================
 
 // Epoch Unix en segundos, o 0 si el reloj todavia no sincronizo.
@@ -114,11 +128,129 @@ void esperarNtp() {
   Serial.println(obtenerEpoch() ? "\nHora sincronizada." : "\nSin NTP: se reintenta en el loop.");
 }
 
+// =============================================================================
+// 4. Buffer en Flash
+// =============================================================================
+
+void contarPendientes() {
+  registrosPendientes = 0;
+  if (!LittleFS.exists(ARCHIVO_BUFFER)) return;
+  File f = LittleFS.open(ARCHIVO_BUFFER, FILE_READ);
+  if (!f) return;
+  while (f.available()) {
+    if (f.read() == '\n') registrosPendientes++;
+  }
+  f.close();
+}
+
+/** Si el buffer crecio demasiado, descarta la mitad mas vieja. */
+void recortarBuffer() {
+  File f = LittleFS.open(ARCHIVO_BUFFER, FILE_READ);
+  if (!f) return;
+  if (f.size() <= MAX_BUFFER_BYTES) {
+    f.close();
+    return;
+  }
+
+  Serial.println("Buffer lleno: se descarta la mitad mas vieja.");
+  f.seek(f.size() / 2);
+  f.readStringUntil('\n');   // descartar la linea partida al medio
+
+  File tmp = LittleFS.open("/tmp.txt", FILE_WRITE);
+  if (!tmp) { f.close(); return; }
+  while (f.available()) tmp.write(f.read());
+  tmp.close();
+  f.close();
+
+  LittleFS.remove(ARCHIVO_BUFFER);
+  LittleFS.rename("/tmp.txt", ARCHIVO_BUFFER);
+  contarPendientes();
+}
+
+void guardarEnFlash(unsigned long ts, float v, float i, float p, float fp) {
+  if (ts == 0) return;   // sin hora valida el registro no sirve para el historial
+
+  File f = LittleFS.open(ARCHIVO_BUFFER, FILE_APPEND);
+  if (!f) {
+    Serial.println("No se pudo abrir el buffer en Flash.");
+    return;
+  }
+  f.printf("%lu,%.2f,%.2f,%.2f,%.2f\n", ts, v, i, p, fp);
+  f.close();
+  registrosPendientes++;
+  Serial.printf("Sin Wi-Fi: guardado en Flash (%lu pendientes).\n", registrosPendientes);
+  recortarBuffer();
+}
+
 /**
- * Intenta una red puntual. Devuelve true si engancho antes del timeout.
- * Se usa para probar la red que llego desde el panel, sin perder la actual
- * hasta saber que la nueva anda.
+ * Sube hasta LOTE_SUBIDA registros pendientes y deja el resto para la proxima
+ * pasada. Devuelve true si quedo algo por subir.
  */
+bool subirLoteDelBuffer() {
+  if (!LittleFS.exists(ARCHIVO_BUFFER)) return false;
+
+  File f = LittleFS.open(ARCHIVO_BUFFER, FILE_READ);
+  if (!f) return false;
+  if (f.size() == 0) {
+    f.close();
+    LittleFS.remove(ARCHIVO_BUFFER);
+    registrosPendientes = 0;
+    return false;
+  }
+
+  int subidos = 0;
+  bool falloAlgo = false;
+
+  while (f.available() && subidos < LOTE_SUBIDA && !falloAlgo) {
+    String linea = f.readStringUntil('\n');
+    linea.trim();
+    if (linea.length() == 0) continue;
+
+    unsigned long ts = 0;
+    float v = 0, i = 0, p = 0, fp = 0;
+    if (sscanf(linea.c_str(), "%lu,%f,%f,%f,%f", &ts, &v, &i, &p, &fp) != 5 || ts == 0) {
+      subidos++;   // linea corrupta: se descarta igual, no se reintenta para siempre
+      continue;
+    }
+
+    FirebaseJson json;
+    json.set("v", v);
+    json.set("i", i);
+    json.set("p", p);
+    json.set("fp", fp);
+
+    if (Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/historial/" + String(ts), json)) {
+      subidos++;
+    } else {
+      // Si falla la red a mitad del lote, se corta y se reintenta despues: lo
+      // que quede sin subir tiene que sobrevivir en el archivo.
+      Serial.print("Error subiendo pendiente: ");
+      Serial.println(fbDatos.errorReason());
+      falloAlgo = true;
+    }
+  }
+
+  // Lo que no se llego a subir se reescribe para la proxima pasada.
+  File tmp = LittleFS.open("/tmp.txt", FILE_WRITE);
+  if (!tmp) { f.close(); return true; }
+  while (f.available()) tmp.write(f.read());
+  tmp.close();
+  f.close();
+
+  LittleFS.remove(ARCHIVO_BUFFER);
+  LittleFS.rename("/tmp.txt", ARCHIVO_BUFFER);
+  contarPendientes();
+
+  if (subidos > 0) {
+    Serial.printf("Subidos %d pendientes, quedan %lu.\n", subidos, registrosPendientes);
+  }
+  return registrosPendientes > 0;
+}
+
+// =============================================================================
+// 5. Wi-Fi
+// =============================================================================
+
 bool conectarA(const String& ssid, const String& clave) {
   Serial.printf("Probando la red \"%s\"...\n", ssid.c_str());
   WiFi.disconnect(true);
@@ -135,13 +267,12 @@ bool conectarA(const String& ssid, const String& clave) {
 }
 
 /**
- * Conexion de arranque.
- *
- * 1. Si el panel dejo una red pendiente, se prueba primero.
- * 2. Si no anda (o no habia), WiFiManager usa las credenciales guardadas.
- * 3. Si tampoco, levanta el portal cautivo. El portal tiene timeout a proposito:
- *    un equipo que quedo esperando configuracion para siempre es un equipo
- *    muerto si el corte de internet fue pasajero.
+ * Conexion de arranque, en orden:
+ *   1. La red que el panel dejo preparada, si hay.
+ *   2. La red de respaldo del sketch, si se configuro y no hay nada guardado.
+ *   3. Las credenciales guardadas en la memoria del equipo (WiFiManager).
+ *   4. El portal cautivo, con timeout: un equipo esperando configuracion para
+ *      siempre es un equipo muerto si el corte de internet era pasajero.
  */
 void conectarWifi() {
   prefs.begin("oxynet", false);
@@ -150,7 +281,7 @@ void conectarWifi() {
   bool hayPendiente = prefs.getBool("pendiente", false);
 
   if (hayPendiente && pendienteSsid.length() > 0) {
-    // Se limpia la marca ANTES de probar: si la red nueva cuelga el equipo y se
+    // La marca se limpia ANTES de probar: si la red nueva cuelga el equipo y se
     // reinicia, no queremos quedar en un bucle intentando lo mismo.
     prefs.putBool("pendiente", false);
     if (conectarA(pendienteSsid, pendienteClave)) {
@@ -161,6 +292,13 @@ void conectarWifi() {
     Serial.println("La red nueva no respondio; se vuelve a la anterior.");
   }
   prefs.end();
+
+  if (strlen(WIFI_SSID_RESPALDO) > 0 && WiFi.SSID().length() == 0) {
+    if (conectarA(WIFI_SSID_RESPALDO, WIFI_PASSWORD_RESPALDO)) {
+      Serial.printf("Conectado a la red de respaldo: %s\n", WiFi.SSID().c_str());
+      return;
+    }
+  }
 
   WiFiManager wm;
   wm.setConfigPortalTimeout(ESPERA_PORTAL_S);
@@ -176,7 +314,7 @@ void conectarWifi() {
 }
 
 // =============================================================================
-// 4. Publicaciones
+// 6. Publicaciones
 // =============================================================================
 
 void publicarEstado() {
@@ -194,6 +332,7 @@ void publicarEstado() {
   estado.set("wifi_aplicado", WiFi.SSID());
   estado.set("pzem_ok", pzemOk);
   estado.set("pzem_fallas", (double)pzemFallasTotales);
+  estado.set("pendientes", (double)registrosPendientes);
 
   if (!Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/estado_dispositivo", estado)) {
     Serial.print("Error publicando estado: ");
@@ -202,8 +341,8 @@ void publicarEstado() {
 }
 
 /**
- * Revisa si el panel dejo una red preparada. La guarda en NVS y reinicia: la
- * secuencia de arranque ya sabe probarla y volver atras sola si no funciona.
+ * Revisa si el panel dejo una red preparada. La guarda en la memoria del equipo
+ * y reinicia: la secuencia de arranque ya sabe probarla y volver atras sola.
  */
 void revisarWifiSolicitado() {
   if (!Firebase.ready()) return;
@@ -218,12 +357,10 @@ void revisarWifiSolicitado() {
   String nuevaClave = "";
   if (json.get(campo, "ssid")) nuevoSsid = campo.stringValue;
   if (json.get(campo, "clave")) nuevaClave = campo.stringValue;
-
   if (nuevoSsid.length() == 0) return;
 
   if (nuevoSsid == WiFi.SSID()) {
-    // Ya estamos en esa red: se borra el pedido para no repetirlo.
-    Firebase.deleteNode(fbConfig, ruta);
+    Firebase.deleteNode(fbConfig, ruta);   // ya estamos ahi: se borra el pedido
     return;
   }
 
@@ -257,10 +394,10 @@ void publicarMedicion() {
     Serial.printf("El PZEM-004T no contesta (%lu seguidas). Revisar 5 V del lado TTL, GND comun y RX/TX.\n",
                   pzemFallasSeguidas);
 
-    // Con el sensor caido no hay medicion que publicar, pero si conviene avisar
-    // enseguida: si no, el panel muestra "sin datos" como si el equipo estuviera
-    // desconectado, que es justo lo que no esta pasando.
-    if (pzemFallasSeguidas == 3) publicarEstado();
+    // Sin medicion no hay nada que publicar, pero SI hay que avisar. El sketch
+    // anterior se iba en silencio y desde el panel el equipo parecia muerto,
+    // cuando en realidad estaba conectado y el que fallaba era el sensor.
+    if (pzemFallasSeguidas == 3 || pzemFallasSeguidas % 60 == 0) publicarEstado();
     return;
   }
 
@@ -272,6 +409,11 @@ void publicarMedicion() {
   if (timestamp == 0) {
     Serial.println("Sin hora valida todavia; se omite esta publicacion.");
     configTime(0, 0, ntpServer);
+    return;
+  }
+
+  if (WiFi.status() != WL_CONNECTED || !Firebase.ready()) {
+    guardarEnFlash(timestamp, tension, corriente, potencia, cosfi);
     return;
   }
 
@@ -287,6 +429,9 @@ void publicarMedicion() {
   if (!Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/ultima_medicion", ultima)) {
     Serial.print("Error en ultima_medicion: ");
     Serial.println(fbDatos.errorReason());
+    // La escritura fallo: la medicion se guarda para no perderla.
+    guardarEnFlash(timestamp, tension, corriente, potencia, cosfi);
+    return;
   }
 
   // 2. historial: un hijo por timestamp, con claves cortas para gastar menos.
@@ -296,20 +441,24 @@ void publicarMedicion() {
   punto.set("p", potencia);
   punto.set("fp", cosfi);
 
-  String rutaHistorial = String(NODO_RAIZ) + "/historial/" + String(timestamp);
-  if (!Firebase.setJSON(fbDatos, rutaHistorial, punto)) {
+  if (!Firebase.setJSON(fbDatos, String(NODO_RAIZ) + "/historial/" + String(timestamp), punto)) {
     Serial.print("Error en historial: ");
     Serial.println(fbDatos.errorReason());
+    guardarEnFlash(timestamp, tension, corriente, potencia, cosfi);
   }
 }
 
 // =============================================================================
-// 5. Setup y loop
+// 7. Setup y loop
 // =============================================================================
 void setup() {
   Serial.begin(115200);
   delay(300);
   Serial.println("\n=== " VERSION_FIRMWARE " ===");
+
+  if (!LittleFS.begin(true)) Serial.println("No se pudo montar LittleFS: sin buffer offline.");
+  else contarPendientes();
+  Serial.printf("Registros pendientes en Flash: %lu\n", registrosPendientes);
 
   conectarWifi();
   esperarNtp();
@@ -329,14 +478,16 @@ void setup() {
 }
 
 void loop() {
-  // Con el Wi-Fi caido no tiene sentido hablar con Firebase. WiFiManager dejo
-  // las credenciales guardadas, asi que el reintento es barato.
   if (WiFi.status() != WL_CONNECTED) {
-    static unsigned long ultimoIntento = 0;
-    if (millis() - ultimoIntento > 10000) {
-      ultimoIntento = millis();
+    if (millis() - ultimoIntentoWifi > 10000) {
+      ultimoIntentoWifi = millis();
       Serial.println("Wi-Fi caido, reconectando...");
       WiFi.reconnect();
+    }
+    // Sin red se sigue midiendo igual: para eso esta el buffer en Flash.
+    if (millis() - ultimaMedicion >= INTERVALO_MEDICION_MS) {
+      ultimaMedicion = millis();
+      publicarMedicion();
     }
     return;
   }
@@ -345,8 +496,10 @@ void loop() {
 
   if (ahora - ultimaMedicion >= INTERVALO_MEDICION_MS) {
     ultimaMedicion = ahora;
-    if (Firebase.ready()) publicarMedicion();
-    else Serial.println("Firebase todavia no esta listo (token en tramite).");
+    publicarMedicion();
+    // Los pendientes van de a lotes chicos, despues de la medicion en vivo:
+    // primero lo que esta pasando ahora, despues lo que quedo debiendo.
+    if (Firebase.ready() && registrosPendientes > 0) subirLoteDelBuffer();
   }
 
   if (ahora - ultimoEstado >= INTERVALO_ESTADO_MS) {

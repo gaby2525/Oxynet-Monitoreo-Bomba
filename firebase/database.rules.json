@@ -49,6 +49,7 @@
         "wifi_aplicado": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "pzem_ok":       { ".validate": "newData.isBoolean()" },
         "pzem_fallas":   { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "pendientes":    { ".validate": "newData.isNumber() && newData.val() >= 0" },
         "$otro":         { ".validate": false }
       },
 

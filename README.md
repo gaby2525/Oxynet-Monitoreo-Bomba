@@ -251,16 +251,36 @@ viendo, así que dice sola dónde está el problema. Las causas, en orden de fre
 
 ### Qué se arregló del sketch original
 
-1. **`DATABASE_URL` correcta.** El `FIREBASE_HOST` que teníamos era el enlace de la consola web
-   (`https://console.firebase.google.com/project/...`), no la URL de la base. Con eso la librería no
-   podía conectarse a ningún lado, y por eso la base nunca recibió un dato.
+1. **`DATABASE_URL` correcta.** El `FIREBASE_HOST` original era el enlace de la consola web
+   (`https://console.firebase.google.com/project/...`), no la URL de la base.
 2. **Autenticación con usuario y contraseña** en lugar del database secret.
-3. **Espera de NTP en el `setup()`.** Antes, si el reloj no había sincronizado, `getUnixTime()`
-   devolvía 0 y `ultima_medicion` se escribía con `timestamp: 0`.
-4. **Reconexión de Wi-Fi.** El `while` del `setup()` original bloqueaba para siempre si la red no
-   aparecía, y una caída posterior dejaba al ESP32 mudo hasta un reset manual.
-5. **Validación de `energy()`**, que también puede devolver NaN.
-6. **`millis()` con resta de unsigned**, que sobrevive al desbordamiento a los ~49 días.
+3. **Espera de NTP en el `setup()`.** Sin eso, `ultima_medicion` se podía escribir con
+   `timestamp: 0`, y el panel lo interpreta como "nunca llegó una medición".
+4. **Señal de vida aunque el PZEM falle.** El sketch anterior hacía `return` cuando el sensor no
+   contestaba, sin escribir nada. Desde el panel el equipo parecía muerto, cuando en realidad
+   estaba conectado y funcionando: el que fallaba era el sensor. Ahora publica su estado con
+   `pzem_ok: false` y el panel dice exactamente eso.
+5. **Se chequea el resultado de cada escritura.** `Firebase.setJSON()` devuelve si funcionó, y sin
+   mirarlo un fallo pasa en silencio. Ahora se informa por serie, y la medición que no se pudo
+   enviar se guarda en el buffer en vez de perderse.
+6. **Reconexión de Wi-Fi** y `millis()` con resta de unsigned, que sobrevive al desbordamiento a los
+   ~49 días. El `while (... && millis() < 10000)` original medía desde el arranque del equipo, no
+   desde el inicio de la espera.
+7. **Validación de `energy()`**, que también puede devolver NaN.
+
+### El buffer en Flash
+
+Si se cae el Wi-Fi, las mediciones se guardan en la memoria del ESP32 (LittleFS) y se suben cuando
+la conexión vuelve. Sobre la versión original de esa idea:
+
+- **La subida va por lotes de 25.** Subir todo de una dejaba el loop bloqueado varios minutos
+  después de una caída larga —con `delay(100)` por registro, 8.000 pendientes son 13 minutos— y en
+  ese rato no se tomaba ninguna medición nueva.
+- **Si una subida falla a mitad del lote, se corta y lo que queda sobrevive** en el archivo para el
+  próximo intento. Antes el archivo se borraba entero al terminar el recorrido, hubieran subido o no.
+- **El buffer tiene tope** (300 KB, unas 14 horas a 5 s). Pasado eso descarta la mitad más vieja, en
+  vez de llenar la Flash.
+- El panel muestra cuántos registros hay pendientes, en la tarjeta de Dispositivo.
 
 ### Wi-Fi sin tocar el código
 

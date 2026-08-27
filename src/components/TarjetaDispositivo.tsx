@@ -125,6 +125,12 @@ export function TarjetaDispositivo({ estado, ahora }: Props) {
               </span>,
             )}
           {estado.pzemFallas > 0 && dato('Fallas del sensor', String(estado.pzemFallas), true)}
+          {estado.pendientes > 0 &&
+            dato(
+              'Pendientes en Flash',
+              `${estado.pendientes.toLocaleString('es-AR')} registros`,
+              true,
+            )}
         </div>
       ) : (
         <p className="metrica__pie">

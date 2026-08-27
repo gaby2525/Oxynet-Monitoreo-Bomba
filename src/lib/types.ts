@@ -72,6 +72,8 @@ export interface EstadoDispositivoRaw {
   /** `false` cuando el PZEM-004T dejo de contestar por Modbus. */
   pzem_ok?: boolean;
   pzem_fallas?: number;
+  /** Mediciones guardadas en la Flash del ESP32 esperando subir. */
+  pendientes?: number;
 }
 
 export interface EstadoDispositivo {
@@ -89,6 +91,7 @@ export interface EstadoDispositivo {
   /** `null` si el firmware es viejo y no informa la salud del sensor. */
   pzemOk: boolean | null;
   pzemFallas: number;
+  pendientes: number;
 }
 
 /** Calidad de senal derivada del RSSI, para no mostrar dBm pelados. */

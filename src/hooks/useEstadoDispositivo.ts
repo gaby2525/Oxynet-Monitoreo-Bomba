@@ -55,6 +55,7 @@ export function useEstadoDispositivo(habilitado: boolean): Resultado {
           wifiAplicado: texto(raw.wifi_aplicado),
           pzemOk: typeof raw.pzem_ok === 'boolean' ? raw.pzem_ok : null,
           pzemFallas: numero(raw.pzem_fallas),
+          pendientes: numero(raw.pendientes),
         });
       },
       (err) => setError(err.message),
