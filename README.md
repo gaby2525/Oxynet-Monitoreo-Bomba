@@ -299,6 +299,16 @@ del propio dispositivo y no de una suposición.
 salen bien, el sensor está sano y el problema está en otra parte; si fallan, no tiene sentido tocar
 nada de Firebase.
 
+Además, si el módulo no contesta, **busca los pines solo**: prueba una lista de combinaciones de
+GPIO en las dos orientaciones y te imprime la que funciona, lista para copiar al firmware.
+
+Esto es posible porque en el ESP32 el UART2 **no está atado a los pines 16/17**: la matriz de GPIO
+lo mapea a casi cualquier pin. Dos cosas para tener presentes:
+
+- En módulos **WROVER** los GPIO 16 y 17 los ocupa la PSRAM y nunca van a andar; ahí conviene 25 y 26.
+- **RX va cruzado**: el RX del ESP32 al **TX** del PZEM, y el TX del ESP32 al **RX** del PZEM.
+  Conectarlos derecho es el error más común y desde afuera se ve igual que un módulo muerto.
+
 Los tres síntomas y qué significan:
 
 - **`SIN RESPUESTA del modulo`** — no hay comunicación Modbus. Casi siempre es una de estas: el lado

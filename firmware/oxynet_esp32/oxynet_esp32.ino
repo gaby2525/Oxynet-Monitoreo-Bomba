@@ -52,8 +52,20 @@ const char* ntpServer = "pool.ntp.org";
 // =============================================================================
 // 2. Pines y objetos
 // =============================================================================
-#define RXD2 16   // Serial2 RX del ESP32
-#define TXD2 17   // Serial2 TX del ESP32
+/*
+ * Pines del UART2 hacia el PZEM-004T.
+ *
+ * En el ESP32 el UART2 no esta atado a ningun pin fijo: la matriz de GPIO lo
+ * mapea a casi cualquiera. Si con 16/17 el modulo no contesta, correr el sketch
+ * `firmware/prueba_pzem`, que busca la combinacion que funciona y la imprime.
+ *
+ * Dos advertencias:
+ *   - En modulos WROVER los GPIO 16 y 17 los ocupa la PSRAM y no sirven; ahi
+ *     conviene 25 y 26.
+ *   - RX va cruzado: RXD2 del ESP32 al TX del PZEM, y TXD2 al RX del PZEM.
+ */
+#define RXD2 16   // Serial2 RX del ESP32  <- TX del PZEM
+#define TXD2 17   // Serial2 TX del ESP32  -> RX del PZEM
 
 PZEM004Tv30 pzem(Serial2, RXD2, TXD2);
 FirebaseData fbDatos;      // para escribir mediciones
