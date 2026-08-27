@@ -36,47 +36,59 @@ cualquier app web de Firebase. Lo que protege los datos son las reglas, no escon
 
 ---
 
-## Qué muestra el panel
+## Cómo está organizado el panel
 
-**Estado y valores instantáneos**
+Tres secciones, con su propia URL (`#/monitor`, `#/analisis`, `#/configuracion`), así que el botón
+"atrás" del navegador funciona y se puede compartir un enlace directo a cualquiera.
 
-- Bomba en marcha / detenida, deducido de la potencia activa.
-- Tensión, corriente, potencia y factor de potencia, cada uno con su estado (normal / atención /
-  fuera de rango) y con un color propio que se repite en su gráfico.
-- Tira de resumen: consumo acumulado, potencia trifásica estimada, energía del rango, tiempo en
-  marcha, ciclo de trabajo y arranques.
+### Monitor
+
+Lo que se mira todos los días, sin nada de configuración encima:
+
+- Estado de la bomba (en marcha / detenida, deducido de la potencia activa) y tira de resumen:
+  consumo acumulado, potencia trifásica estimada, energía del rango, tiempo en marcha, ciclo de
+  trabajo y arranques.
+- Cuatro tarjetas con los valores instantáneos, cada una con su estado (normal / atención / fuera
+  de rango) y un color propio que se repite en su gráfico.
+- Alarmas activas arriba de todo; si hay alguna, la pestaña Monitor muestra un contador.
+- Selector de rango y los cuatro gráficos.
 - Indicador de señal: avisa cuando hace más de 20 s que no llega una lectura nueva.
 
-**Alarmas**
+### Análisis
 
-Se calculan sobre la última medición: subtensión, sobretensión, sobrecorriente, corriente elevada
-(>85 % del máximo), potencia sobre el máximo y factor de potencia bajo. Con la bomba detenida no se
-disparan alarmas de corriente ni de cos φ, porque en reposo esos valores en cero son lo esperado.
+**Parámetros del periodo**, que es el cuadro que uno miraría en un informe de consumo:
 
-**Umbrales editables desde la app**
+| Grupo | Qué trae |
+|---|---|
+| Tensión | media, mínima, máxima, desvío y variación (máx − mín) / media |
+| Corriente | media, **media en marcha**, y pico (normalmente el golpe de arranque) |
+| Potencia | activa media y máxima, aparente media (VA), reactiva media (var), factor de carga y cos φ medio en marcha |
+| Energía | activa (kWh) y aparente (kVAh) |
+| Operación | tiempo en marcha y detenida, ciclo de trabajo, arranques, arranques por hora y duración media de cada marcha |
 
-El botón **⚙ Umbrales** abre un panel donde se define el mínimo y el máximo de cada variable. Dejar
-un campo vacío quita ese límite. Los cambios se reflejan al instante en las alarmas, en las líneas
-punteadas de los gráficos y en el CSV.
+Un par valen la aclaración:
 
-Se guardan en el navegador (`localStorage`), así que valen por dispositivo: en el celular hay que
-cargarlos de nuevo. A cambio, no hace falta abrir la escritura de la base ni nadie puede cambiarlos
-de afuera. Los valores de fábrica salen de las variables de entorno, y **Restablecer** vuelve a
-ellos.
+- **Media en marcha** está separada de la media general a propósito. El promedio de corriente
+  contando el tiempo detenida da un número que no significa nada; el que se compara con la chapa
+  del motor es el otro.
+- **Factor de carga** es la potencia media en marcha sobre la máxima. Dice qué tan parejo trabaja
+  el motor: un valor bajo significa que casi toda la potencia se va en picos.
 
-**Historial**
+Debajo, los mismos gráficos con más aire, la tabla completa y la descarga del informe CSV.
 
-- Rangos de 15 min, 1 h, 6 h, 24 h, 7 días y **Personalizado**, que abre dos campos de fecha y hora
-  para elegir cualquier ventana.
-- Cuatro gráficos con crosshair, tooltip, línea de umbral y, cuando el rango obliga a agrupar
-  muestras, la envolvente mín–máx de cada bucket — así los picos de arranque no se pierden en el
-  promedio.
-- Debajo de cada gráfico: mínimo, promedio, **promedio en marcha**, máximo, desvío y último.
-- Vista de tabla equivalente, con potencia aparente incluida.
+### Configuración
 
-**Informe CSV**
+- **Umbrales de alarma**: mínimo y máximo de cada variable. Dejar un campo vacío quita ese límite.
+  Los cambios se reflejan al instante en las alarmas, en las líneas punteadas de los gráficos y en
+  el CSV. Se guardan en el navegador (`localStorage`), así que valen por dispositivo; los valores
+  de fábrica salen de las variables de entorno y **Restablecer** vuelve a ellos.
+- **Dispositivo y red**: a qué Wi-Fi está conectado el ESP32, con qué señal, su IP, su MAC, hace
+  cuánto está encendido y qué firmware corre. Desde ahí se le puede dejar una red preparada.
+- **Apariencia**: tema claro / oscuro / automático, nodo de datos y estado de la sesión.
 
-El botón de descarga arma un CSV de tres bloques:
+## El informe CSV
+
+Tres bloques:
 
 1. **Cabecera del periodo**: rango, desde/hasta, registros, energía estimada, tiempo con datos,
    tiempo en marcha, ciclo de trabajo, arranques y potencia media en marcha.
@@ -86,25 +98,35 @@ El botón de descarga arma un CSV de tres bloques:
 
 Separador `;` y coma decimal, que es lo que abre Excel en español sin pedir nada.
 
-**Dispositivo y Wi-Fi**
+## Cuánto historial entra en cada rango
 
-La tarjeta de abajo muestra a qué red está conectado el ESP32, con qué señal, su IP, su MAC, hace
-cuánto está encendido y qué versión de firmware corre.
+El panel descarga los últimos N registros y recorta la ventana en el cliente. Ese tope está
+calculado sobre el peor caso —una muestra cada 5 s, que es lo que publica el firmware— para que los
+rangos que se usan a diario entren **completos**:
 
-Desde ahí también se le puede **dejar una red preparada** sin desmontarlo ni abrir el IDE de
-Arduino: el equipo la revisa cada minuto, la prueba, y si no funciona vuelve solo a la anterior. Y
-si no logra conectarse a ninguna red conocida, levanta su propia red `Oxynet-Bomba` con portal
-cautivo para configurarlo desde el celular parado al lado.
+| Rango | Registros que necesita | Tope | Cobertura |
+|---|---|---|---|
+| 15 min | 180 | 400 | 100 % |
+| 1 hora | 720 | 1.000 | 100 % |
+| 6 horas | 4.320 | 5.500 | 100 % |
+| 24 horas | 17.280 | 20.000 | 100 % |
+| 7 días | 120.960 | 30.000 | ~25 % |
 
-**Modo demostración**
+Siete días a 5 segundos son casi 121.000 registros: eso no se baja de una consulta, y el panel lo
+dice en vez de fingir que tiene la ventana completa. Dos formas de arreglarlo:
+
+1. **Subir el intervalo del firmware** a 15 o 30 segundos (`INTERVALO_MEDICION_MS`). Para un motor
+   que arranca cada varios minutos, 5 segundos es mucha más resolución de la necesaria, y a 30 s
+   una semana entran 20.160 registros: dentro del tope.
+2. **Guardar resúmenes por hora** en `/bomba_oxigeno/resumen_horario/<epoch_hora>` con mín, máx y
+   promedio de cada variable. Es lo que permitiría ver meses de historial sin descargar todo. No
+   está implementado todavía.
+
+## Modo demostración
 
 Agregando `?demo=1` a la URL, la app genera datos sintéticos. Sirve para ver la interfaz sin el
-ESP32 encendido, o para verificar que el deploy quedó bien antes de conectar la base.
-
-**Tema**
-
-Claro, oscuro o automático según el sistema. La paleta de los gráficos está validada para daltonismo
-y contraste en los dos modos (ver más abajo).
+ESP32 encendido, o para verificar que el deploy quedó bien antes de conectar la base. El aviso trae
+un botón para salir, porque la URL se queda pegada fácil en el historial del navegador.
 
 ## Puesta en marcha local
 
@@ -332,19 +354,15 @@ gráficos ya están preparados para agregar series.
 
 A 5 segundos son 17.280 registros por día, unos 1,7 MB diarios y del orden de 600 MB al año. El plan
 gratuito de Firebase da 1 GB de almacenamiento y 10 GB de descarga por mes, así que en algún momento
-aprieta. Tres formas de manejarlo, de menor a mayor esfuerzo:
+aprieta — y además es lo que limita el rango de 7 días (ver más arriba).
 
-1. **Subir el intervalo** a 15 o 30 segundos. Para un motor que arranca y para cada varios minutos,
-   5 segundos es mucho más resolución de la que hace falta.
-2. **Borrar lo viejo**: una tarea programada (Cloud Function o un script que corra en cualquier lado)
-   que elimine los registros de más de 30 días.
-3. **Guardar resúmenes por hora** en `/bomba_oxigeno/resumen_horario/<epoch_hora>` con mín, máx y
-   promedio de cada variable. Es lo que permitiría ver meses de historial sin descargar todo.
+Tres formas de manejarlo, de menor a mayor esfuerzo:
 
-Por eso el rango de 7 días tiene un tope de registros por consulta: si se alcanza, el panel avisa que
-está mostrando el tramo más reciente en vez de fingir que tiene la ventana completa.
-
----
+1. **Subir el intervalo** a 15 o 30 segundos, en `INTERVALO_MEDICION_MS` del firmware. Es el cambio
+   de una línea y resuelve las dos cosas a la vez.
+2. **Borrar lo viejo**: una tarea programada (Cloud Function o un script que corra en cualquier
+   lado) que elimine los registros de más de 30 días.
+3. **Guardar resúmenes por hora**, como se describe arriba.
 
 ## Comandos
 

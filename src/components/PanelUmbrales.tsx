@@ -34,10 +34,9 @@ interface Props {
   colores: string[];
   onGuardar: (u: Umbrales) => void;
   onRestablecer: () => void;
-  onCerrar: () => void;
 }
 
-export function PanelUmbrales({ umbrales, colores, onGuardar, onRestablecer, onCerrar }: Props) {
+export function PanelUmbrales({ umbrales, colores, onGuardar, onRestablecer }: Props) {
   const [borrador, setBorrador] = useState<Borrador>(() => aBorrador(umbrales));
   const [guardado, setGuardado] = useState(false);
 
@@ -158,9 +157,6 @@ export function PanelUmbrales({ umbrales, colores, onGuardar, onRestablecer, onC
         </span>
         <button type="button" className="boton" onClick={onRestablecer}>
           Restablecer
-        </button>
-        <button type="button" className="boton" onClick={onCerrar}>
-          Cerrar
         </button>
         <button type="button" className="boton boton--principal" onClick={guardar}>
           Guardar umbrales

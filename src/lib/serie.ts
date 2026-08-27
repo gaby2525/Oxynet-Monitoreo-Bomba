@@ -186,3 +186,120 @@ export function resumenDelRango(
     potenciaMediaEnMarcha: segMarcha > 0 ? (joules / segMarcha) : null,
   };
 }
+
+/**
+ * Cuadro completo del periodo: lo que uno miraria en un informe de consumo.
+ * Todo sale de una sola pasada sobre la serie ya filtrada a la ventana.
+ */
+export interface ParametrosPeriodo {
+  // --- Tension ---
+  tensionMedia: number | null;
+  tensionMin: number | null;
+  tensionMax: number | null;
+  tensionDesvio: number | null;
+  /** (max - min) / media, en fraccion. Cuanto se mueve la linea. */
+  variacionTension: number | null;
+
+  // --- Corriente ---
+  corrienteMedia: number | null;
+  /** Promedio contando solo el tiempo en marcha: el que se compara con la chapa. */
+  corrienteMediaEnMarcha: number | null;
+  corrienteMax: number | null;
+
+  // --- Potencia ---
+  potenciaActivaMedia: number | null;
+  potenciaActivaMaxima: number | null;
+  potenciaAparenteMedia: number | null;
+  potenciaReactivaMedia: number | null;
+  factorPotenciaMedio: number | null;
+  /** Potencia media en marcha sobre la maxima: que tan parejo trabaja el motor. */
+  factorDeCarga: number | null;
+
+  // --- Energia ---
+  energiaActivaKwh: number;
+  energiaAparenteKvah: number;
+
+  // --- Operacion ---
+  segundosEnMarcha: number;
+  segundosDetenida: number;
+  cicloDeTrabajo: number;
+  arranques: number;
+  arranquesPorHora: number | null;
+  /** Duracion media de cada tramo en marcha, en segundos. */
+  duracionMediaMarcha: number | null;
+}
+
+export function parametrosDelPeriodo(
+  puntos: PuntoHistorial[],
+  umbrales: Umbrales,
+  resumen: ResumenRango,
+): ParametrosPeriodo {
+  const vacio: ParametrosPeriodo = {
+    tensionMedia: null, tensionMin: null, tensionMax: null, tensionDesvio: null,
+    variacionTension: null, corrienteMedia: null, corrienteMediaEnMarcha: null,
+    corrienteMax: null, potenciaActivaMedia: null, potenciaActivaMaxima: null,
+    potenciaAparenteMedia: null, potenciaReactivaMedia: null, factorPotenciaMedio: null,
+    factorDeCarga: null, energiaActivaKwh: 0, energiaAparenteKvah: 0,
+    segundosEnMarcha: 0, segundosDetenida: 0, cicloDeTrabajo: 0, arranques: 0,
+    arranquesPorHora: null, duracionMediaMarcha: null,
+  };
+  if (puntos.length === 0) return vacio;
+
+  const v = estadisticas(puntos, 'tension', umbrales)!;
+  const i = estadisticas(puntos, 'corriente', umbrales)!;
+  const p = estadisticas(puntos, 'potencia', umbrales)!;
+  const fp = estadisticas(puntos, 'cosfi', umbrales)!;
+
+  // Potencias aparente y reactiva: se integran en el tiempo igual que la activa,
+  // salteando los mismos huecos, para que kVAh y kWh sean comparables.
+  let vaSegundos = 0;
+  let varSegundos = 0;
+  let pMaxEnMarcha = 0;
+  for (let k = 1; k < puntos.length; k++) {
+    const dt = (puntos[k].ms - puntos[k - 1].ms) / 1000;
+    if (dt <= 0 || dt > MAX_HUECO_S) continue;
+    const s1 = puntos[k - 1].tension * puntos[k - 1].corriente;
+    const s2 = puntos[k].tension * puntos[k].corriente;
+    const q1 = Math.sqrt(Math.max(0, s1 * s1 - puntos[k - 1].potencia ** 2));
+    const q2 = Math.sqrt(Math.max(0, s2 * s2 - puntos[k].potencia ** 2));
+    vaSegundos += ((s1 + s2) / 2) * dt;
+    varSegundos += ((q1 + q2) / 2) * dt;
+    if (puntos[k].potencia > pMaxEnMarcha) pMaxEnMarcha = puntos[k].potencia;
+  }
+
+  const conDatos = resumen.segundosConDatos;
+  const horas = conDatos / 3600;
+
+  return {
+    tensionMedia: v.promedio,
+    tensionMin: v.min,
+    tensionMax: v.max,
+    tensionDesvio: v.desvio,
+    variacionTension: v.promedio > 0 ? (v.max - v.min) / v.promedio : null,
+
+    corrienteMedia: i.promedio,
+    corrienteMediaEnMarcha: i.promedioEnMarcha,
+    corrienteMax: i.max,
+
+    potenciaActivaMedia: p.promedio,
+    potenciaActivaMaxima: p.max,
+    potenciaAparenteMedia: conDatos > 0 ? vaSegundos / conDatos : null,
+    potenciaReactivaMedia: conDatos > 0 ? varSegundos / conDatos : null,
+    factorPotenciaMedio: fp.promedioEnMarcha,
+    factorDeCarga:
+      pMaxEnMarcha > 0 && resumen.potenciaMediaEnMarcha !== null
+        ? resumen.potenciaMediaEnMarcha / pMaxEnMarcha
+        : null,
+
+    energiaActivaKwh: resumen.energiaKwh,
+    energiaAparenteKvah: vaSegundos / 3_600_000,
+
+    segundosEnMarcha: resumen.segundosEnMarcha,
+    segundosDetenida: Math.max(0, conDatos - resumen.segundosEnMarcha),
+    cicloDeTrabajo: resumen.cicloDeTrabajo,
+    arranques: resumen.arranques,
+    arranquesPorHora: horas > 0.05 ? resumen.arranques / horas : null,
+    duracionMediaMarcha:
+      resumen.arranques > 0 ? resumen.segundosEnMarcha / resumen.arranques : null,
+  };
+}

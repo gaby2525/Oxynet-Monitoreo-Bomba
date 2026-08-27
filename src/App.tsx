@@ -1,8 +1,10 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { GraficoMetrica } from './components/GraficoMetrica';
+import { NavSecciones } from './components/NavSecciones';
 import { PanelAlarmas } from './components/PanelAlarmas';
 import { PanelUmbrales } from './components/PanelUmbrales';
 import { PantallaConfiguracion } from './components/PantallaConfiguracion';
+import { ResumenPeriodo } from './components/ResumenPeriodo';
 import { SelectorRango } from './components/SelectorRango';
 import { SelectorTema } from './components/SelectorTema';
 import { SenalEstado } from './components/SenalEstado';
@@ -15,6 +17,7 @@ import { useColores } from './hooks/useColores';
 import { useEstadoDispositivo } from './hooks/useEstadoDispositivo';
 import { useHistorial } from './hooks/useHistorial';
 import { useReloj } from './hooks/useReloj';
+import { useSeccion } from './hooks/useSeccion';
 import { useTema } from './hooks/useTema';
 import { useUltimaMedicion } from './hooks/useUltimaMedicion';
 import { useUmbrales } from './hooks/useUmbrales';
@@ -30,19 +33,22 @@ import { errorDeInicializacion } from './lib/firebase';
 import { fechaHora } from './lib/format';
 import { METRICAS, alarmasActivas, descripcionLimite, severidadDe } from './lib/metricas';
 import { RANGO_POR_DEFECTO, ventanaDe, type Rango, type Ventana } from './lib/rangos';
-import { agregarSerie, estadisticas, resumenDelRango } from './lib/serie';
+import {
+  agregarSerie,
+  estadisticas,
+  parametrosDelPeriodo,
+  resumenDelRango,
+} from './lib/serie';
 import type { EstadoConexion } from './lib/types';
 
 const GraficoMemo = memo(GraficoMetrica);
 
-type Vista = 'graficos' | 'tabla';
-
 export function App() {
+  const [seccion, irA] = useSeccion();
   const [tema, setTema] = useTema();
   const [rango, setRango] = useState<Rango>(RANGO_POR_DEFECTO);
   const [ventanaManual, setVentanaManual] = useState<Ventana | null>(null);
-  const [vista, setVista] = useState<Vista>('graficos');
-  const [panelUmbrales, setPanelUmbrales] = useState(false);
+  const [vistaTabla, setVistaTabla] = useState(false);
 
   const colores = useColores(tema);
   const { umbrales, guardarUmbrales, restablecer } = useUmbrales();
@@ -58,8 +64,6 @@ export function App() {
   const { medicion, cargando: cargandoVivo, error: errorVivo } = useUltimaMedicion(auth.listo);
   const { estado: dispositivo } = useEstadoDispositivo(auth.listo);
 
-  // El borde derecho sigue al reloj grueso salvo en un rango elegido a mano,
-  // donde la ventana es exactamente la que se pidio.
   const ventana = useMemo(
     () => ventanaDe(rango, rango.ms === null ? ahoraGrueso : epochConsulta, ventanaManual),
     [rango, ahoraGrueso, epochConsulta, ventanaManual],
@@ -96,6 +100,11 @@ export function App() {
     [puntos, umbrales, desdeMs, hastaMs],
   );
 
+  const parametros = useMemo(
+    () => parametrosDelPeriodo(puntos, umbrales, resumen),
+    [puntos, umbrales, resumen],
+  );
+
   const series = useMemo(
     () =>
       METRICAS.map((definicion) => ({
@@ -119,7 +128,7 @@ export function App() {
   const descargar = useCallback(() => {
     descargarCsv(
       informeCsv({ puntos, resumen, umbrales, etiquetaRango }),
-      nombreDeArchivo(rango.ms === null ? 'personalizado' : rango.etiqueta),
+      nombreDeArchivo(rango.ms === null ? 'a-medida' : rango.etiqueta),
     );
   }, [puntos, resumen, umbrales, etiquetaRango, rango]);
 
@@ -138,6 +147,24 @@ export function App() {
 
   const error = errorDeInicializacion ?? errorVivo ?? errorHistorial;
 
+  /** Barra de rango, compartida por Monitor y Analisis. */
+  const barraRango = (
+    <div className="herramientas">
+      <SelectorRango
+        rango={rango}
+        ventana={ventana}
+        onElegirRango={elegirRango}
+        onElegirVentana={setVentanaManual}
+      />
+      {recortado && (
+        <span className="herramientas__aviso">
+          Mostrando los {rango.maxPuntos.toLocaleString('es-AR')} registros mas recientes: el rango
+          completo no entra en una consulta.
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <>
       <header className="barra">
@@ -155,8 +182,10 @@ export function App() {
           </div>
           <div className="barra__acciones">
             <SenalEstado estado={estadoConexion} ultimoMs={ultimoMs} ahora={ahoraFino} />
-            <SelectorTema tema={tema} onCambiar={setTema} />
           </div>
+        </div>
+        <div className="barra__nav">
+          <NavSecciones seccion={seccion} onIr={irA} alarmas={alarmas.length} />
         </div>
       </header>
 
@@ -173,151 +202,197 @@ export function App() {
           </div>
         )}
 
-        {auth.aviso && (
-          <div className="nota" role="status">
-            <span className="nota__icono" aria-hidden="true">
-              ▲
-            </span>
-            <span>{auth.aviso}</span>
-          </div>
-        )}
-
         {modoDemo && (
           <div className="nota" role="status">
             <span className="nota__icono" aria-hidden="true">
               ●
             </span>
             <span>
-              <b>Modo demostracion:</b> los valores son simulados, no vienen del ESP32. Quitar{' '}
-              <code>?demo=1</code> de la URL para volver a los datos reales.
+              <b>Modo demostracion:</b> los valores son simulados, no vienen del ESP32.
             </span>
+            <a className="boton nota__accion" href={window.location.pathname}>
+              Salir del modo demo
+            </a>
           </div>
         )}
 
-        {estadoConexion === 'sin-datos' && !error && (
-          <div className="nota" role="status">
-            <span className="nota__icono" aria-hidden="true">
-              ▲
-            </span>
-            <span>
-              Hace mas de {SEGUNDOS_PARA_SIN_DATOS} s que no llega una lectura nueva. Revisar que el
-              ESP32 tenga energia y Wi-Fi; los graficos siguen mostrando lo ultimo registrado.
-            </span>
-          </div>
-        )}
+        {seccion === 'monitor' && (
+          <>
+            {estadoConexion === 'sin-datos' && !error && !modoDemo && (
+              <div className="nota" role="status">
+                <span className="nota__icono" aria-hidden="true">
+                  ▲
+                </span>
+                <span>
+                  Hace mas de {SEGUNDOS_PARA_SIN_DATOS} s que no llega una lectura nueva. Revisar que
+                  el ESP32 tenga energia y Wi-Fi; los graficos siguen mostrando lo ultimo registrado.
+                </span>
+              </div>
+            )}
 
-        <PanelAlarmas alarmas={alarmas} />
+            <PanelAlarmas alarmas={alarmas} />
 
-        <TiraEstado
-          medicion={medicion}
-          umbrales={umbrales}
-          resumen={resumen}
-          ahora={ahoraFino}
-          etiquetaRango={etiquetaRango}
-        />
-
-        <section className="metricas" aria-label="Valores instantaneos">
-          {METRICAS.map((m, i) => (
-            <TarjetaMetrica
-              key={m.clave}
-              etiqueta={m.etiqueta}
-              valor={medicion ? medicion[m.clave] : null}
-              unidad={m.unidad}
-              decimales={m.decimales}
-              severidad={severidadDe(m.clave, medicion, umbrales)}
-              acento={colores.series[i]}
-              pie={descripcionLimite(umbrales, m.clave)}
+            <TiraEstado
+              medicion={medicion}
+              umbrales={umbrales}
+              resumen={resumen}
+              ahora={ahoraFino}
+              etiquetaRango={etiquetaRango}
             />
-          ))}
-        </section>
 
-        <div className="seccion__cabecera">
-          <h2>Historial</h2>
-          <SelectorRango
-            rango={rango}
-            ventana={ventana}
-            onElegirRango={elegirRango}
-            onElegirVentana={setVentanaManual}
-          />
-          <div className="segmentado" role="group" aria-label="Forma de ver los datos">
-            <button
-              type="button"
-              aria-pressed={vista === 'graficos'}
-              onClick={() => setVista('graficos')}
-            >
-              Graficos
-            </button>
-            <button type="button" aria-pressed={vista === 'tabla'} onClick={() => setVista('tabla')}>
-              Tabla
-            </button>
-          </div>
-          <button
-            type="button"
-            className="boton"
-            aria-expanded={panelUmbrales}
-            onClick={() => setPanelUmbrales((v) => !v)}
-          >
-            ⚙ Umbrales
-          </button>
-          <button type="button" className="boton" disabled={puntos.length === 0} onClick={descargar}>
-            ↓ Informe CSV ({puntos.length})
-          </button>
-        </div>
+            <section className="metricas" aria-label="Valores instantaneos">
+              {METRICAS.map((m, i) => (
+                <TarjetaMetrica
+                  key={m.clave}
+                  etiqueta={m.etiqueta}
+                  valor={medicion ? medicion[m.clave] : null}
+                  unidad={m.unidad}
+                  decimales={m.decimales}
+                  severidad={severidadDe(m.clave, medicion, umbrales)}
+                  acento={colores.series[i]}
+                  pie={descripcionLimite(umbrales, m.clave)}
+                />
+              ))}
+            </section>
 
-        {panelUmbrales && (
-          <PanelUmbrales
-            umbrales={umbrales}
-            colores={colores.series}
-            onGuardar={guardarUmbrales}
-            onRestablecer={restablecer}
-            onCerrar={() => setPanelUmbrales(false)}
-          />
+            {barraRango}
+
+            <div className="graficos">
+              {series.map(({ definicion, serie, agregado, stats }, i) => (
+                <GraficoMemo
+                  key={definicion.clave}
+                  definicion={definicion}
+                  descripcion={descripcionLimite(umbrales, definicion.clave)}
+                  limite={umbrales[definicion.clave]}
+                  serie={serie}
+                  agregado={agregado}
+                  stats={stats}
+                  desdeMs={desdeMs}
+                  hastaMs={hastaMs}
+                  color={colores.series[i]}
+                  colorSuave={colores.seriesSuaves[i]}
+                  grilla={colores.grilla}
+                  eje={colores.eje}
+                  muted={colores.muted}
+                  critico={colores.critico}
+                  superficie={colores.superficie}
+                  cargando={cargandoHistorial}
+                />
+              ))}
+            </div>
+          </>
         )}
 
-        {recortado && (
-          <div className="nota" role="status">
-            <span className="nota__icono" aria-hidden="true">
-              ▲
-            </span>
-            <span>
-              El rango pedido supera el tope de {rango.maxPuntos} registros por consulta, asi que se
-              muestran los mas recientes. Para ver rangos largos completos conviene guardar resumenes
-              por hora en la base (ver README).
-            </span>
-          </div>
+        {seccion === 'analisis' && (
+          <>
+            {barraRango}
+
+            <ResumenPeriodo
+              parametros={parametros}
+              colores={colores.series}
+              etiquetaRango={etiquetaRango}
+              registros={puntos.length}
+            />
+
+            <div className="seccion__cabecera">
+              <h2>Registros</h2>
+              <div className="segmentado" role="group" aria-label="Forma de ver los registros">
+                <button type="button" aria-pressed={!vistaTabla} onClick={() => setVistaTabla(false)}>
+                  Resumen
+                </button>
+                <button type="button" aria-pressed={vistaTabla} onClick={() => setVistaTabla(true)}>
+                  Tabla completa
+                </button>
+              </div>
+              <button
+                type="button"
+                className="boton boton--principal"
+                disabled={puntos.length === 0}
+                onClick={descargar}
+              >
+                ↓ Descargar informe CSV
+              </button>
+            </div>
+
+            {vistaTabla ? (
+              <TablaRegistros puntos={puntos} umbrales={umbrales} />
+            ) : (
+              <div className="graficos">
+                {series.map(({ definicion, serie, agregado, stats }, i) => (
+                  <GraficoMemo
+                    key={definicion.clave}
+                    definicion={definicion}
+                    descripcion={descripcionLimite(umbrales, definicion.clave)}
+                    limite={umbrales[definicion.clave]}
+                    serie={serie}
+                    agregado={agregado}
+                    stats={stats}
+                    desdeMs={desdeMs}
+                    hastaMs={hastaMs}
+                    color={colores.series[i]}
+                    colorSuave={colores.seriesSuaves[i]}
+                    grilla={colores.grilla}
+                    eje={colores.eje}
+                    muted={colores.muted}
+                    critico={colores.critico}
+                    superficie={colores.superficie}
+                    cargando={cargandoHistorial}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
-        {vista === 'graficos' ? (
-          <div className="graficos">
-            {series.map(({ definicion, serie, agregado, stats }, i) => (
-              <GraficoMemo
-                key={definicion.clave}
-                definicion={definicion}
-                descripcion={descripcionLimite(umbrales, definicion.clave)}
-                limite={umbrales[definicion.clave]}
-                serie={serie}
-                agregado={agregado}
-                stats={stats}
-                desdeMs={desdeMs}
-                hastaMs={hastaMs}
-                color={colores.series[i]}
-                colorSuave={colores.seriesSuaves[i]}
-                grilla={colores.grilla}
-                eje={colores.eje}
-                muted={colores.muted}
-                critico={colores.critico}
-                superficie={colores.superficie}
-                cargando={cargandoHistorial}
-              />
-            ))}
-          </div>
-        ) : (
-          <TablaRegistros puntos={puntos} umbrales={umbrales} />
-        )}
+        {seccion === 'configuracion' && (
+          <>
+            {auth.aviso && (
+              <div className="nota" role="status">
+                <span className="nota__icono" aria-hidden="true">
+                  ▲
+                </span>
+                <span>{auth.aviso}</span>
+              </div>
+            )}
 
-        <div style={{ marginTop: 16 }}>
-          <TarjetaDispositivo estado={dispositivo} ahora={ahoraFino} />
-        </div>
+            <div className="seccion__cabecera" style={{ marginTop: 4 }}>
+              <h2>Umbrales de alarma</h2>
+            </div>
+            <PanelUmbrales
+              umbrales={umbrales}
+              colores={colores.series}
+              onGuardar={guardarUmbrales}
+              onRestablecer={restablecer}
+            />
+
+            <div className="seccion__cabecera">
+              <h2>Dispositivo y red</h2>
+            </div>
+            <TarjetaDispositivo estado={dispositivo} ahora={ahoraFino} />
+
+            <div className="seccion__cabecera">
+              <h2>Apariencia</h2>
+            </div>
+            <section className="tarjeta dispositivo">
+              <div className="dispositivo__grilla">
+                <div className="dispositivo__dato">
+                  <span className="rotulo">Tema</span>
+                  <div style={{ marginTop: 4 }}>
+                    <SelectorTema tema={tema} onCambiar={setTema} />
+                  </div>
+                </div>
+                <div className="dispositivo__dato">
+                  <span className="rotulo">Nodo de datos</span>
+                  <b className="num">{DB_ROOT}</b>
+                </div>
+                <div className="dispositivo__dato">
+                  <span className="rotulo">Sesion</span>
+                  <b>{auth.autenticado ? 'Anonima activa' : 'Sin sesion'}</b>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
 
         <footer className="pie">
           <span>
@@ -325,8 +400,8 @@ export function App() {
             para carga equilibrada, y no detecta desbalance ni falta de fase.
           </span>
           <span>
-            Los umbrales se guardan en este navegador. La energia del rango se integra a partir de la
-            potencia medida, salteando los huecos de mas de un minuto.
+            Los umbrales se guardan en este navegador. La energia se integra a partir de la potencia
+            medida, salteando los huecos de mas de un minuto.
           </span>
         </footer>
       </div>

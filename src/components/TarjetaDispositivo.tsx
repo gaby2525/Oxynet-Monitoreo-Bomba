@@ -77,8 +77,7 @@ export function TarjetaDispositivo({ estado, ahora }: Props) {
 
   return (
     <section className="tarjeta dispositivo" aria-label="Dispositivo">
-      <div className="seccion__cabecera" style={{ margin: '0 0 12px' }}>
-        <h2>Dispositivo</h2>
+      <div className="dispositivo__acciones">
         <button
           type="button"
           className="boton"

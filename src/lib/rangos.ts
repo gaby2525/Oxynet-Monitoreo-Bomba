@@ -16,19 +16,28 @@ export interface Rango {
   maxPuntos: number;
 }
 
+/**
+ * Topes de descarga por consulta.
+ *
+ * Estan calculados sobre el peor caso: una muestra cada 5 s, que es lo que
+ * publica el firmware. Un tope por debajo de lo que necesita su ventana hace
+ * que el rango NUNCA se pueda ver completo, asi que 15 min a 24 h entran
+ * enteros. Siete dias son ~121.000 registros: eso no se descarga a mano, se
+ * resuelve guardando resumenes por hora en la base (ver README).
+ */
 export const RANGOS: Rango[] = [
-  { id: '15m', etiqueta: '15 min', ms: 15 * 60_000, maxPuntos: 600 },
-  { id: '1h', etiqueta: '1 hora', ms: 60 * 60_000, maxPuntos: 1200 },
-  { id: '6h', etiqueta: '6 horas', ms: 6 * 60 * 60_000, maxPuntos: 3000 },
-  { id: '24h', etiqueta: '24 horas', ms: 24 * 60 * 60_000, maxPuntos: 6000 },
-  { id: '7d', etiqueta: '7 dias', ms: 7 * 24 * 60 * 60_000, maxPuntos: 9000 },
+  { id: '15m', etiqueta: '15 min', ms: 15 * 60_000, maxPuntos: 400 },
+  { id: '1h', etiqueta: '1 hora', ms: 60 * 60_000, maxPuntos: 1_000 },
+  { id: '6h', etiqueta: '6 horas', ms: 6 * 60 * 60_000, maxPuntos: 5_500 },
+  { id: '24h', etiqueta: '24 horas', ms: 24 * 60 * 60_000, maxPuntos: 20_000 },
+  { id: '7d', etiqueta: '7 dias', ms: 7 * 24 * 60 * 60_000, maxPuntos: 30_000 },
 ];
 
 export const RANGO_PERSONALIZADO: Rango = {
   id: 'custom',
-  etiqueta: 'Personalizado',
+  etiqueta: 'A medida',
   ms: null,
-  maxPuntos: 9000,
+  maxPuntos: 30_000,
 };
 
 export const RANGO_POR_DEFECTO = RANGOS[1];
