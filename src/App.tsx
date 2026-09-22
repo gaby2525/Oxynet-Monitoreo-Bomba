@@ -114,7 +114,6 @@ export function App() {
     [puntos, desdeMs, hastaMs, umbrales],
   );
 
-  // Extraemos las series individuales de tensión y corriente para el gráfico combinado
   const serieTension = useMemo(
     () => agregarSerie(puntos, 'tension', desdeMs, hastaMs).serie,
     [puntos, desdeMs, hastaMs],
