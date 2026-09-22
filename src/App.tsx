@@ -76,7 +76,20 @@ export function App() {
     recortado,
     desdeMs,
   } = useHistorial(rango, ventana, auth.listo);
+   // Rango exacto que calcula los días transcurridos desde el día 1 de este mes
+  const rangoMesActual = useMemo(() => {
+    const ahora = new Date();
+    const inicioDeMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    const msTranscurridos = ahora.getTime() - inicioDeMes.getTime();
+    return { ms: msTranscurridos, etiqueta: 'Mes actual', maxPuntos: 10000 };
+  }, [ahoraGrueso]);
 
+  const ventanaMesActual = useMemo(
+    () => ventanaDe(rangoMesActual, epochConsulta, null),
+    [rangoMesActual, epochConsulta],
+  );
+
+  const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
   const hastaMs = useMemo(() => {
     if (rango.ms === null) return ventana.hastaMs;
     const ultimo = puntos.length > 0 ? puntos[puntos.length - 1].ms : 0;
@@ -334,7 +347,7 @@ export function App() {
         {seccion === 'analisis' && (
           <>
             {/* NUEVO MÓDULO DE PROMEDIOS EN MARCHA Y ARRANQUES */}
-            <ResumenMensual puntos={puntos} />
+            <ResumenMensual puntos={puntosMesActual} />
             {barraRango}
             
             <ResumenPeriodo
