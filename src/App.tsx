@@ -1,3 +1,4 @@
+import { ResumenMensual } from './components/ResumenMensual';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { GraficoMetrica } from './components/GraficoMetrica';
 import { GraficoTensionCorriente } from './components/GraficoTensionCorriente';
@@ -333,7 +334,8 @@ export function App() {
         {seccion === 'analisis' && (
           <>
             {barraRango}
-
+            {/* NUEVO MÓDULO DE PROMEDIOS EN MARCHA Y ARRANQUES */}
+            <ResumenMensual puntos={puntos} />
             <ResumenPeriodo
               parametros={parametros}
               colores={colores.series}
