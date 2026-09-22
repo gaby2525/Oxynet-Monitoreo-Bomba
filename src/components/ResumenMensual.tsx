@@ -1,8 +1,16 @@
 import { useMemo } from 'react';
-import type { Punto } from '../lib/types';
+
+// Definimos la estructura mínima requerida para las lecturas
+interface LecturaGrafico {
+  ms: number;
+  tension: number;
+  corriente: number;
+  potencia: number;
+  [key: string]: any;
+}
 
 interface ResumenMensualProps {
-  puntos: Punto[];
+  puntos: LecturaGrafico[];
   umbralMarcha?: number;
 }
 
@@ -19,7 +27,7 @@ interface DatosMes {
 
 export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualProps) {
   const resumenes = useMemo(() => {
-    const grupos: Record<string, Punto[]> = {};
+    const grupos: Record<string, LecturaGrafico[]> = {};
 
     puntos.forEach((p) => {
       const fecha = new Date(p.ms);
