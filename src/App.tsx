@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { GraficoMetrica } from './components/GraficoMetrica';
+import { GraficoTensionCorriente } from './components/GraficoTensionCorriente';
 import { NavSecciones } from './components/NavSecciones';
 import { PanelAlarmas } from './components/PanelAlarmas';
 import { PanelUmbrales } from './components/PanelUmbrales';
@@ -42,6 +43,7 @@ import {
 import type { EstadoConexion } from './lib/types';
 
 const GraficoMemo = memo(GraficoMetrica);
+const GraficoTensionCorrienteMemo = memo(GraficoTensionCorriente);
 
 export function App() {
   const [seccion, irA] = useSeccion();
@@ -53,9 +55,6 @@ export function App() {
   const colores = useColores(tema);
   const { umbrales, guardarUmbrales, restablecer } = useUmbrales();
 
-  // Tres relojes con distinta cadencia: el fino mueve los "hace N s", el grueso
-  // el borde derecho de los graficos, y el de anclaje re-consulta la ventana
-  // historica (una consulta nueva vuelve a descargar todo, asi que va lenta).
   const ahoraFino = useReloj(1000);
   const ahoraGrueso = useReloj(15_000);
   const epochConsulta = useReloj(300_000);
@@ -115,14 +114,22 @@ export function App() {
     [puntos, desdeMs, hastaMs, umbrales],
   );
 
+  // Extraemos las series individuales de tensión y corriente para el gráfico combinado
+  const serieTension = useMemo(
+    () => agregarSerie(puntos, 'tension', desdeMs, hastaMs).serie,
+    [puntos, desdeMs, hastaMs],
+  );
+
+  const serieCorriente = useMemo(
+    () => agregarSerie(puntos, 'corriente', desdeMs, hastaMs).serie,
+    [puntos, desdeMs, hastaMs],
+  );
+
   const alarmas = useMemo(
     () => (estadoConexion === 'sin-datos' ? [] : alarmasActivas(medicion, umbrales)),
     [medicion, umbrales, estadoConexion],
   );
 
-  // El ESP32 sigue reportandose pero el sensor no contesta: no es lo mismo que
-  // un equipo desconectado, y confundirlos manda a buscar el problema al lado
-  // equivocado.
   const sensorCaido =
     dispositivo !== null &&
     dispositivo.pzemOk === false &&
@@ -156,7 +163,6 @@ export function App() {
 
   const error = errorDeInicializacion ?? errorVivo ?? errorHistorial;
 
-  /** Barra de rango, compartida por Monitor y Analisis. */
   const barraRango = (
     <div className="herramientas">
       <SelectorRango
@@ -278,6 +284,27 @@ export function App() {
 
             {barraRango}
 
+            {/* GRAFICO COMBINADO (TENSION Y CORRIENTE) */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <GraficoTensionCorrienteMemo
+                serieTension={serieTension}
+                serieCorriente={serieCorriente}
+                limiteTension={umbrales.tension}
+                limiteCorriente={umbrales.corriente}
+                desdeMs={desdeMs}
+                hastaMs={hastaMs}
+                colorTension={colores.series[0]}
+                colorCorriente={colores.series[1]}
+                grilla={colores.grilla}
+                eje={colores.eje}
+                muted={colores.muted}
+                critico={colores.critico}
+                superficie={colores.superficie}
+                cargando={cargandoHistorial}
+              />
+            </div>
+
+            {/* GRAFICOS INDIVIDUALES */}
             <div className="graficos">
               {series.map(({ definicion, serie, agregado, stats }, i) => (
                 <GraficoMemo
