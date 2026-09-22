@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
-import type { PuntoLectura } from '../lib/types';
+import type { Punto } from '../lib/types';
 
 interface ResumenMensualProps {
-  puntos: PuntoLectura[];
-  umbralMarcha?: number; // Corriente mínima para considerar que arrancó (default 0.5A)
+  puntos: Punto[];
+  umbralMarcha?: number;
 }
 
 interface DatosMes {
-  claveMes: string; // ej "2026-09"
-  nombreMes: string; // ej "Septiembre 2026"
+  claveMes: string;
+  nombreMes: string;
   corrientePromedioMarcha: number;
   tensionPromedioMarcha: number;
   potenciaPromedioMarcha: number;
@@ -19,9 +19,8 @@ interface DatosMes {
 
 export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualProps) {
   const resumenes = useMemo(() => {
-    const grupos: Record<string, PuntoLectura[]> = {};
+    const grupos: Record<string, Punto[]> = {};
 
-    // 1. Agrupar puntos por Mes/Año
     puntos.forEach((p) => {
       const fecha = new Date(p.ms);
       const clave = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
@@ -31,7 +30,6 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
 
     const resultado: DatosMes[] = [];
 
-    // 2. Procesar cada mes
     Object.keys(grupos)
       .sort()
       .reverse()
@@ -52,7 +50,6 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
           const actual = lecturas[i];
           const estaEnMarcha = actual.corriente >= umbralMarcha;
 
-          // Detección de arranque (Flanco de subida)
           if (estaEnMarcha && !enMarcha) {
             arranques++;
             enMarcha = true;
@@ -60,17 +57,15 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
             enMarcha = false;
           }
 
-          // Acumular solo si la bomba está encendida
           if (estaEnMarcha) {
             sumaI += actual.corriente;
             sumaV += actual.tension;
             sumaP += actual.potencia;
             puntosMarcha++;
 
-            // Integración de tiempo y energía con la lectura siguiente
             if (i < lecturas.length - 1) {
               const dtS = (lecturas[i + 1].ms - actual.ms) / 1000;
-              if (dtS > 0 && dtS < 300) { // ignorar huecos mayores a 5 min
+              if (dtS > 0 && dtS < 300) {
                 tiempoMarchaMs += dtS * 1000;
                 energiaWh += (actual.potencia * dtS) / 3600;
               }
@@ -100,28 +95,45 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
   }, [puntos, umbralMarcha]);
 
   if (resumenes.length === 0) {
-    return (
-      <div className="nota">
-        <span>No hay datos suficientes cargados para estructurar la comparativa mensual.</span>
-      </div>
-    );
+    return null;
   }
 
   return (
     <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
       <h3 style={{ marginBottom: '1rem' }}>📊 Comparativa y Tendencia Mensual (Solo en Marcha)</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
         {resumenes.map((m, idx) => {
           const mesAnterior = resumenes[idx + 1];
-          const diffI = mesAnterior && mesAnterior.corrientePromedioMarcha > 0
-            ? ((m.corrientePromedioMarcha - mesAnterior.corrientePromedioMarcha) / mesAnterior.corrientePromedioMarcha) * 100
-            : null;
+          const diffI =
+            mesAnterior && mesAnterior.corrientePromedioMarcha > 0
+              ? ((m.corrientePromedioMarcha - mesAnterior.corrientePromedioMarcha) /
+                  mesAnterior.corrientePromedioMarcha) *
+                100
+              : null;
 
           return (
             <div key={m.claveMes} className="tarjeta" style={{ padding: '1.25rem', borderRadius: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', pb: '0.5rem', mb: '0.75rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid rgba(255,255,255,0.1)',
+                  paddingBottom: '0.5rem',
+                  marginBottom: '0.75rem',
+                }}
+              >
                 <b style={{ fontSize: '1.1rem' }}>{m.nombreMes}</b>
-                <span className="etiqueta" style={{ background: '#0284c7', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
+                <span
+                  style={{
+                    background: '#0284c7',
+                    color: '#fff',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    fontWeight: 'bold',
+                  }}
+                >
                   {m.arranques} {m.arranques === 1 ? 'Arranque' : 'Arranques'}
                 </span>
               </div>
@@ -132,7 +144,13 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
                   <div>
                     <b style={{ fontSize: '1.2rem' }}>{m.corrientePromedioMarcha.toFixed(2)} A</b>
                     {diffI !== null && (
-                      <span style={{ fontSize: '0.75rem', marginLeft: '6px', color: diffI > 3 ? '#ef4444' : '#10b981' }}>
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          marginLeft: '6px',
+                          color: diffI > 3 ? '#ef4444' : '#10b981',
+                        }}
+                      >
                         ({diffI > 0 ? `+${diffI.toFixed(1)}%` : `${diffI.toFixed(1)}%`})
                       </span>
                     )}
@@ -148,12 +166,16 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
 
                 <div>
                   <span className="rotulo">Horas de Uso</span>
-                  <div><b>{m.horasMarcha.toFixed(1)} hs</b></div>
+                  <div>
+                    <b>{m.horasMarcha.toFixed(1)} hs</b>
+                  </div>
                 </div>
 
                 <div>
                   <span className="rotulo">Consumo</span>
-                  <div><b>{m.consumoKwh.toFixed(2)} kWh</b></div>
+                  <div>
+                    <b>{m.consumoKwh.toFixed(2)} kWh</b>
+                  </div>
                 </div>
               </div>
             </div>
