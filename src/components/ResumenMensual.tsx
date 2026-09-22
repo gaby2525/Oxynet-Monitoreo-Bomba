@@ -1,42 +1,20 @@
 import { useMemo } from 'react';
 
-// Definimos la estructura mínima requerida para las lecturas
-interface LecturaGrafico {
-  ms: number;
-  tension: number;
-  corriente: number;
-  potencia: number;
-  [key: string]: any;
-}
-
-interface ResumenMensualProps {
-  puntos: LecturaGrafico[];
-  umbralMarcha?: number;
-}
-
-interface DatosMes {
-  claveMes: string;
-  nombreMes: string;
-  corrientePromedioMarcha: number;
-  tensionPromedioMarcha: number;
-  potenciaPromedioMarcha: number;
-  arranques: number;
-  horasMarcha: number;
-  consumoKwh: number;
-}
-
-export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualProps) {
+export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; umbralMarcha?: number }) {
   const resumenes = useMemo(() => {
-    const grupos: Record<string, LecturaGrafico[]> = {};
+    if (!Array.isArray(puntos)) return [];
+
+    const grupos: Record<string, any[]> = {};
 
     puntos.forEach((p) => {
+      if (!p || !p.ms) return;
       const fecha = new Date(p.ms);
       const clave = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
       if (!grupos[clave]) grupos[clave] = [];
       grupos[clave].push(p);
     });
 
-    const resultado: DatosMes[] = [];
+    const resultado: any[] = [];
 
     Object.keys(grupos)
       .sort()
@@ -56,7 +34,10 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
 
         for (let i = 0; i < lecturas.length; i++) {
           const actual = lecturas[i];
-          const estaEnMarcha = actual.corriente >= umbralMarcha;
+          const corriente = actual.corriente ?? 0;
+          const tension = actual.tension ?? 0;
+          const potencia = actual.potencia ?? 0;
+          const estaEnMarcha = corriente >= umbralMarcha;
 
           if (estaEnMarcha && !enMarcha) {
             arranques++;
@@ -66,16 +47,16 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
           }
 
           if (estaEnMarcha) {
-            sumaI += actual.corriente;
-            sumaV += actual.tension;
-            sumaP += actual.potencia;
+            sumaI += corriente;
+            sumaV += tension;
+            sumaP += potencia;
             puntosMarcha++;
 
             if (i < lecturas.length - 1) {
               const dtS = (lecturas[i + 1].ms - actual.ms) / 1000;
               if (dtS > 0 && dtS < 300) {
                 tiempoMarchaMs += dtS * 1000;
-                energiaWh += (actual.potencia * dtS) / 3600;
+                energiaWh += (potencia * dtS) / 3600;
               }
             }
           }
@@ -102,13 +83,11 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: ResumenMensualPro
     return resultado;
   }, [puntos, umbralMarcha]);
 
-  if (resumenes.length === 0) {
-    return null;
-  }
+  if (resumenes.length === 0) return null;
 
   return (
     <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
-      <h3 style={{ marginBottom: '1rem' }}>📊 Comparativa y Tendencia Mensual (Solo en Marcha)</h3>
+      <h3 style={{ marginBottom: '1rem' }}>📊 Comparativa Mensual (Solo en Marcha)</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
         {resumenes.map((m, idx) => {
           const mesAnterior = resumenes[idx + 1];
