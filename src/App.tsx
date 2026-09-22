@@ -81,7 +81,12 @@ export function App() {
     const ahora = new Date();
     const inicioDeMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     const msTranscurridos = ahora.getTime() - inicioDeMes.getTime();
-    return { ms: msTranscurridos, etiqueta: 'Mes actual', maxPuntos: 10000 };
+    return {
+      id: 'mes-actual',
+      ms: msTranscurridos,
+      etiqueta: 'Mes actual',
+      maxPuntos: 10000,
+    };
   }, [ahoraGrueso]);
 
   const ventanaMesActual = useMemo(
