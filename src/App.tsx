@@ -333,9 +333,10 @@ export function App() {
 
         {seccion === 'analisis' && (
           <>
-            {barraRango}
             {/* NUEVO MÓDULO DE PROMEDIOS EN MARCHA Y ARRANQUES */}
             <ResumenMensual puntos={puntos} />
+            {barraRango}
+            
             <ResumenPeriodo
               parametros={parametros}
               colores={colores.series}
