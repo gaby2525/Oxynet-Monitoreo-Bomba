@@ -160,12 +160,23 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
                   </div>
                 </div>
 
-                <div>
-                  <span className="rotulo">Horas de Uso</span>
-                  <div>
-                    <b>{m.horasMarcha.toFixed(1)} hs</b>
-                  </div>
-                </div>
+// ✅ AHORA (Reemplazar por esta versión formateada):
+<div>
+  <span className="rotulo">Tiempo de Uso</span>
+  <div>
+    <b>
+      {(() => {
+        const minutosTotales = Math.round(m.horasMarcha * 60);
+        if (minutosTotales < 60) {
+          return `${minutosTotales} min`;
+        }
+        const hs = Math.floor(minutosTotales / 60);
+        const mins = minutosTotales % 60;
+        return mins > 0 ? `${hs} hs ${mins} min` : `${hs} hs`;
+      })()}
+    </b>
+  </div>
+</div>
 
                 <div>
                   <span className="rotulo">Consumo</span>
