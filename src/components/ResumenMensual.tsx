@@ -83,7 +83,16 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
     return resultado;
   }, [puntos, umbralMarcha]);
 
-  if (resumenes.length === 0) return null;
+ if (resumenes.length === 0) {
+    return (
+      <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }} className="tarjeta">
+        <h3>📊 Comparativa Mensual (Solo en Marcha)</h3>
+        <p style={{ marginTop: '0.5rem', color: '#888' }}>
+          Sin registros de operacion (marcha) para el periodo consultado.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
