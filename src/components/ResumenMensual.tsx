@@ -159,8 +159,7 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
                     <b style={{ fontSize: '1.2rem' }}>{m.tensionPromedioMarcha.toFixed(1)} V</b>
                   </div>
                 </div>
-
-// ✅ AHORA (Reemplazar por esta versión formateada):
+                
 <div>
   <span className="rotulo">Tiempo de Uso</span>
   <div>
