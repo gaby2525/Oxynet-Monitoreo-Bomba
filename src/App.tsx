@@ -93,7 +93,15 @@ export function App() {
     () => ventanaDe(rangoMesActual, epochConsulta, null),
     [rangoMesActual, epochConsulta],
   );
+const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
 
+  // 👈 PEGAR AQUÍ (Línea 96):
+  const puntosMesEnMarcha = useMemo(() => {
+    if (!puntosMesActual) return [];
+    return puntosMesActual.filter(
+      (p) => p.corriente >= 0.5 || p.potencia > umbrales.potenciaApagada
+    );
+  }, [puntosMesActual, umbrales.potenciaApagada]);
   const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
   const hastaMs = useMemo(() => {
     if (rango.ms === null) return ventana.hastaMs;
@@ -352,7 +360,7 @@ export function App() {
         {seccion === 'analisis' && (
           <>
             {/* NUEVO MÓDULO DE PROMEDIOS EN MARCHA Y ARRANQUES */}
-            <ResumenMensual puntos={puntosMesActual} />
+            <ResumenMensual puntos={puntosMesEnMarcha} umbralMarcha={0.5} />
             {barraRango}
             
             <ResumenPeriodo
