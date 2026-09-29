@@ -28,42 +28,37 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
         let sumaP = 0;
         let puntosMarcha = 0;
         let arranques = 0;
-        let enMarcha = false;
         let tiempoMarchaMs = 0;
         let energiaWh = 0;
 
-       for (let i = 0; i < lecturas.length; i++) {
-  const actual = lecturas[i];
-  const corriente = actual.corriente ?? 0;
-  const tension = actual.tension ?? 0;
-  const potencia = actual.potencia ?? 0;
-  const estaEnMarcha = corriente >= umbralMarcha;
+        for (let i = 0; i < lecturas.length; i++) {
+          const actual = lecturas[i];
+          const corriente = actual.corriente ?? 0;
+          const tension = actual.tension ?? 0;
+          const potencia = actual.potencia ?? 0;
 
-  // Detección de arranques
-  if (estaEnMarcha && !enMarcha) {
-    arranques++;
-    enMarcha = true;
-  } else if (!estaEnMarcha) {
-    enMarcha = false;
-  }
+          sumaI += corriente;
+          sumaV += tension;
+          sumaP += potencia;
+          puntosMarcha++;
 
-  // Acumulación de valores instantáneos
-  if (estaEnMarcha) {
-    sumaI += corriente;
-    sumaV += tension;
-    sumaP += potencia;
-    puntosMarcha++;
+          // DETECCIÓN DE ARRANQUES BASADA EN PAUSAS DE TIEMPO
+          // El primer punto de la lista es el 1er arranque.
+          // Si pasaron más de 30 segundos respecto al punto anterior, es una nueva encendida.
+          if (i === 0 || actual.ms - lecturas[i - 1].ms > 30000) {
+            arranques++;
+          }
 
-    // Cálculo del intervalo dt respecto al punto ANTERIOR
-    if (i > 0) {
-      const dtS = (actual.ms - lecturas[i - 1].ms) / 1000;
-      if (dtS > 0 && dtS < 300) {
-        tiempoMarchaMs += dtS * 1000;
-        energiaWh += (potencia * dtS) / 3600;
-      }
-    }
-  }
-}
+          // ACUMULACIÓN DE TIEMPO Y ENERGÍA
+          if (i > 0) {
+            const dtS = (actual.ms - lecturas[i - 1].ms) / 1000;
+            // Solo acumula si la pausa entre muestras es normal dentro de una misma sesión (< 5 min)
+            if (dtS > 0 && dtS < 300) {
+              tiempoMarchaMs += dtS * 1000;
+              energiaWh += (potencia * dtS) / 3600;
+            }
+          }
+        }
 
         const fechaEjemplo = new Date(lecturas[0].ms);
         const nombreMes = fechaEjemplo.toLocaleDateString('es-AR', {
