@@ -32,35 +32,38 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
         let tiempoMarchaMs = 0;
         let energiaWh = 0;
 
-        for (let i = 0; i < lecturas.length; i++) {
-          const actual = lecturas[i];
-          const corriente = actual.corriente ?? 0;
-          const tension = actual.tension ?? 0;
-          const potencia = actual.potencia ?? 0;
-          const estaEnMarcha = corriente >= umbralMarcha;
+       for (let i = 0; i < lecturas.length; i++) {
+  const actual = lecturas[i];
+  const corriente = actual.corriente ?? 0;
+  const tension = actual.tension ?? 0;
+  const potencia = actual.potencia ?? 0;
+  const estaEnMarcha = corriente >= umbralMarcha;
 
-          if (estaEnMarcha && !enMarcha) {
-            arranques++;
-            enMarcha = true;
-          } else if (!estaEnMarcha) {
-            enMarcha = false;
-          }
+  // Detección de arranques
+  if (estaEnMarcha && !enMarcha) {
+    arranques++;
+    enMarcha = true;
+  } else if (!estaEnMarcha) {
+    enMarcha = false;
+  }
 
-          if (estaEnMarcha) {
-            sumaI += corriente;
-            sumaV += tension;
-            sumaP += potencia;
-            puntosMarcha++;
+  // Acumulación de valores instantáneos
+  if (estaEnMarcha) {
+    sumaI += corriente;
+    sumaV += tension;
+    sumaP += potencia;
+    puntosMarcha++;
 
-            if (i < lecturas.length - 1) {
-              const dtS = (lecturas[i + 1].ms - actual.ms) / 1000;
-              if (dtS > 0 && dtS < 300) {
-                tiempoMarchaMs += dtS * 1000;
-                energiaWh += (potencia * dtS) / 3600;
-              }
-            }
-          }
-        }
+    // Cálculo del intervalo dt respecto al punto ANTERIOR
+    if (i > 0) {
+      const dtS = (actual.ms - lecturas[i - 1].ms) / 1000;
+      if (dtS > 0 && dtS < 300) {
+        tiempoMarchaMs += dtS * 1000;
+        energiaWh += (potencia * dtS) / 3600;
+      }
+    }
+  }
+}
 
         const fechaEjemplo = new Date(lecturas[0].ms);
         const nombreMes = fechaEjemplo.toLocaleDateString('es-AR', {
