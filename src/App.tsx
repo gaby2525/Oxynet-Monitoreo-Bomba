@@ -41,7 +41,7 @@ import {
   parametrosDelPeriodo,
   resumenDelRango,
 } from './lib/serie';
-import type { EstadoConexion } from './lib/types';
+import type { EstadoConexion, PuntoHistorial } from './lib/types';
 
 const GraficoMemo = memo(GraficoMetrica);
 const GraficoTensionCorrienteMemo = memo(GraficoTensionCorriente);
@@ -96,15 +96,15 @@ export function App() {
   );
 const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
 
-  // 👈 PEGAR AQUÍ (Línea 96):
-  // Tipo asegurado para que no falle el build
+  
+
   const puntosMesEnMarcha = useMemo<PuntoHistorial[]>(() => {
     if (!Array.isArray(puntosMesActual)) return [];
     return puntosMesActual.filter(
       (p) => (p?.corriente ?? 0) >= 0.5 || (p?.potencia ?? 0) > umbrales.potenciaApagada
     );
   }, [puntosMesActual, umbrales.potenciaApagada]);
-  const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
+  //const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
   const hastaMs = useMemo(() => {
     if (rango.ms === null) return ventana.hastaMs;
     const ultimo = puntos.length > 0 ? puntos[puntos.length - 1].ms : 0;
