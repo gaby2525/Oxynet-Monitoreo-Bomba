@@ -77,6 +77,7 @@ export function App() {
     desdeMs,
   } = useHistorial(rango, ventana, auth.listo);
    // Rango exacto que calcula los días transcurridos desde el día 1 de este mes
+// ✅ AHORA (Reemplazar por esto):
   const rangoMesActual = useMemo(() => {
     const ahora = new Date();
     const inicioDeMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -85,7 +86,7 @@ export function App() {
       id: 'mes-actual',
       ms: msTranscurridos,
       etiqueta: 'Mes actual',
-      maxPuntos: 10000,
+      maxPuntos: 50000, // 👈 Subimos a 50.000 para cubrir todo el mes de lecturas
     };
   }, [ahoraGrueso]);
 
