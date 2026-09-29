@@ -97,10 +97,11 @@ export function App() {
 const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
 
   // 👈 PEGAR AQUÍ (Línea 96):
-  const puntosMesEnMarcha = useMemo(() => {
-    if (!puntosMesActual) return [];
+  // Tipo asegurado para que no falle el build
+  const puntosMesEnMarcha = useMemo<PuntoHistorial[]>(() => {
+    if (!Array.isArray(puntosMesActual)) return [];
     return puntosMesActual.filter(
-      (p) => p.corriente >= 0.5 || p.potencia > umbrales.potenciaApagada
+      (p) => (p?.corriente ?? 0) >= 0.5 || (p?.potencia ?? 0) > umbrales.potenciaApagada
     );
   }, [puntosMesActual, umbrales.potenciaApagada]);
   const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
