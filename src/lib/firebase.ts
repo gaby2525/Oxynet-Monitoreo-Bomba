@@ -4,7 +4,7 @@ import { getDatabase, type Database } from 'firebase/database';
 import { firebaseConfig, firebaseConfigurado } from './config';
 
 let app: FirebaseApp | null = null;
-let db: Database | null = null;
+export db: Database | null = null;
 let auth: Auth | null = null;
 
 /** Mensaje del SDK si la inicializacion fallo, para poder mostrarlo en pantalla. */
