@@ -1,8 +1,17 @@
 import { useMemo } from 'react';
+import { ref, set } from 'firebase/database';
+import { db } from '../firebaseConfig'; // Ajustá la ruta a tu firebaseConfig si difiere
 
-export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; umbralMarcha?: number }) {
-  const resumenes = useMemo(() => {
-    if (!Array.isArray(puntos)) return [];
+interface ResumenMensualProps {
+  puntos: any[];
+  historicoGuardado?: Record<string, any>;
+  umbralMarcha?: number;
+}
+
+export function ResumenMensual({ puntos, historicoGuardado = {}, umbralMarcha = 0.5 }: ResumenMensualProps) {
+  // 1. Agrupar y calcular resúmenes de los puntos crudos en memoria (Mes actual)
+  const resumenesCalculados = useMemo(() => {
+    if (!Array.isArray(puntos)) return {};
 
     const grupos: Record<string, any[]> = {};
 
@@ -14,79 +23,116 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
       grupos[clave].push(p);
     });
 
-    const resultado: any[] = [];
+    const resultado: Record<string, any> = {};
 
-    Object.keys(grupos)
-      .sort()
-      .reverse()
-      .forEach((clave) => {
-        const lecturas = grupos[clave];
-        lecturas.sort((a, b) => a.ms - b.ms);
+    Object.keys(grupos).forEach((clave) => {
+      const lecturas = grupos[clave];
+      lecturas.sort((a, b) => a.ms - b.ms);
 
-        let sumaI = 0;
-        let sumaV = 0;
-        let sumaP = 0;
-        let puntosMarcha = 0;
-        let arranques = 0;
-        let tiempoMarchaMs = 0;
-        let energiaWh = 0;
+      let sumaI = 0;
+      let sumaV = 0;
+      let sumaP = 0;
+      let puntosMarcha = 0;
+      let arranques = 0;
+      let tiempoMarchaMs = 0;
+      let energiaWh = 0;
 
-        for (let i = 0; i < lecturas.length; i++) {
-          const actual = lecturas[i];
-          const corriente = actual.corriente ?? 0;
-          const tension = actual.tension ?? 0;
-          const potencia = actual.potencia ?? 0;
+      for (let i = 0; i < lecturas.length; i++) {
+        const actual = lecturas[i];
+        const corriente = actual.corriente ?? 0;
+        const tension = actual.tension ?? 0;
+        const potencia = actual.potencia ?? 0;
 
-          sumaI += corriente;
-          sumaV += tension;
-          sumaP += potencia;
-          puntosMarcha++;
+        sumaI += corriente;
+        sumaV += tension;
+        sumaP += potencia;
+        puntosMarcha++;
 
-          // DETECCIÓN DE ARRANQUES BASADA EN PAUSAS DE TIEMPO
-          // El primer punto de la lista es el 1er arranque.
-          // Si pasaron más de 30 segundos respecto al punto anterior, es una nueva encendida.
-          if (i === 0 || actual.ms - lecturas[i - 1].ms > 30000) {
-            arranques++;
-          }
-
-          // ACUMULACIÓN DE TIEMPO Y ENERGÍA
-          if (i > 0) {
-            const dtS = (actual.ms - lecturas[i - 1].ms) / 1000;
-            // Solo acumula si la pausa entre muestras es normal dentro de una misma sesión (< 5 min)
-            if (dtS > 0 && dtS < 300) {
-              tiempoMarchaMs += dtS * 1000;
-              energiaWh += (potencia * dtS) / 3600;
-            }
-          }
+        // Detección de arranques por salto de tiempo (> 30s)
+        if (i === 0 || actual.ms - lecturas[i - 1].ms > 30000) {
+          arranques++;
         }
 
-        const fechaEjemplo = new Date(lecturas[0].ms);
-        const nombreMes = fechaEjemplo.toLocaleDateString('es-AR', {
-          month: 'long',
-          year: 'numeric',
-        });
+        // Acumulación de tiempo y energía
+        if (i > 0) {
+          const dtS = (actual.ms - lecturas[i - 1].ms) / 1000;
+          if (dtS > 0 && dtS < 300) {
+            tiempoMarchaMs += dtS * 1000;
+            energiaWh += (potencia * dtS) / 3600;
+          }
+        }
+      }
 
-        resultado.push({
-          claveMes: clave,
-          nombreMes: nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1),
-          corrientePromedioMarcha: puntosMarcha > 0 ? sumaI / puntosMarcha : 0,
-          tensionPromedioMarcha: puntosMarcha > 0 ? sumaV / puntosMarcha : 0,
-          potenciaPromedioMarcha: puntosMarcha > 0 ? sumaP / puntosMarcha : 0,
-          arranques,
-          horasMarcha: tiempoMarchaMs / (1000 * 3600),
-          consumoKwh: energiaWh / 1000,
-        });
+      const fechaEjemplo = new Date(lecturas[0].ms);
+      const nombreMes = fechaEjemplo.toLocaleDateString('es-AR', {
+        month: 'long',
+        year: 'numeric',
       });
 
-    return resultado;
-  }, [puntos, umbralMarcha]);
+      resultado[clave] = {
+        claveMes: clave,
+        nombreMes: nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1),
+        corrientePromedioMarcha: puntosMarcha > 0 ? sumaI / puntosMarcha : 0,
+        tensionPromedioMarcha: puntosMarcha > 0 ? sumaV / puntosMarcha : 0,
+        potenciaPromedioMarcha: puntosMarcha > 0 ? sumaP / puntosMarcha : 0,
+        arranques,
+        horasMarcha: tiempoMarchaMs / (1000 * 3600),
+        consumoKwh: energiaWh / 1000,
+      };
+    });
 
- if (resumenes.length === 0) {
+    return resultado;
+  }, [puntos]);
+
+  // 2. Fusionar los datos calculados en vivo con los históricos guardados en Firebase
+  const listaFinal = useMemo(() => {
+    const claves = Array.from(
+      new Set([...Object.keys(resumenesCalculados), ...Object.keys(historicoGuardado)])
+    )
+      .sort()
+      .reverse();
+
+    return claves.map((clave) => {
+      // Si está guardado en Firebase usa el guardado, de lo contrario usa el calculado en vivo
+      const datosGuardados = historicoGuardado[clave];
+      const datosCalculados = resumenesCalculados[clave];
+
+      if (datosGuardados) {
+        return { ...datosGuardados, esGuardado: true };
+      }
+
+      return { ...datosCalculados, esGuardado: false };
+    });
+  }, [resumenesCalculados, historicoGuardado]);
+
+  // Función para guardar el resumen de un mes en Firebase
+  const guardarEnFirebase = async (item: any) => {
+    try {
+      const dataToSave = {
+        claveMes: item.claveMes,
+        nombreMes: item.nombreMes,
+        corrientePromedioMarcha: item.corrientePromedioMarcha,
+        tensionPromedioMarcha: item.tensionPromedioMarcha,
+        potenciaPromedioMarcha: item.potenciaPromedioMarcha,
+        arranques: item.arranques,
+        horasMarcha: item.horasMarcha,
+        consumoKwh: item.consumoKwh,
+      };
+
+      await set(ref(db, `bomba_oxigeno/resumenes_mensuales/${item.claveMes}`), dataToSave);
+      alert(`✅ Resumen de ${item.nombreMes} guardado exitosamente en Firebase.`);
+    } catch (error) {
+      console.error('Error al guardar en Firebase:', error);
+      alert('❌ Error al guardar el resumen.');
+    }
+  };
+
+  if (listaFinal.length === 0) {
     return (
       <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }} className="tarjeta">
         <h3>📊 Comparativa Mensual (Solo en Marcha)</h3>
         <p style={{ marginTop: '0.5rem', color: '#888' }}>
-          Sin registros de operacion (marcha) para el periodo consultado.
+          Sin registros de operación para el período consultado.
         </p>
       </div>
     );
@@ -96,8 +142,8 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
     <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
       <h3 style={{ marginBottom: '1rem' }}>📊 Comparativa Mensual (Solo en Marcha)</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-        {resumenes.map((m, idx) => {
-          const mesAnterior = resumenes[idx + 1];
+        {listaFinal.map((m, idx) => {
+          const mesAnterior = listaFinal[idx + 1];
           const diffI =
             mesAnterior && mesAnterior.corrientePromedioMarcha > 0
               ? ((m.corrientePromedioMarcha - mesAnterior.corrientePromedioMarcha) /
@@ -118,18 +164,42 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
                 }}
               >
                 <b style={{ fontSize: '1.1rem' }}>{m.nombreMes}</b>
-                <span
-                  style={{
-                    background: '#0284c7',
-                    color: '#fff',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.8rem',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {m.arranques} {m.arranques === 1 ? 'Arranque' : 'Arranques'}
-                </span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <span
+                    style={{
+                      background: '#0284c7',
+                      color: '#fff',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.8rem',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {m.arranques} {m.arranques === 1 ? 'Arranque' : 'Arranques'}
+                  </span>
+                  {!m.esGuardado && (
+                    <button
+                      onClick={() => guardarEnFirebase(m)}
+                      title="Guardar cierre de mes en Firebase"
+                      style={{
+                        background: '#10b981',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '2px 6px',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                      }}
+                    >
+                      💾 Guardar
+                    </button>
+                  )}
+                  {m.esGuardado && (
+                    <span title="Guardado en Firebase" style={{ fontSize: '0.8rem' }}>
+                      🔒
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.9rem' }}>
@@ -142,7 +212,7 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
                         style={{
                           fontSize: '0.75rem',
                           marginLeft: '6px',
-                          color: diffI > 3 ? '#ef4444' : '#10b981',
+                          color: diffI > 5 || diffI < -5 ? '#ef4444' : '#10b981',
                         }}
                       >
                         ({diffI > 0 ? `+${diffI.toFixed(1)}%` : `${diffI.toFixed(1)}%`})
@@ -157,23 +227,32 @@ export function ResumenMensual({ puntos, umbralMarcha = 0.5 }: { puntos: any[]; 
                     <b style={{ fontSize: '1.2rem' }}>{m.tensionPromedioMarcha.toFixed(1)} V</b>
                   </div>
                 </div>
-                
-<div>
-  <span className="rotulo">Tiempo de Uso</span>
-  <div>
-    <b>
-      {(() => {
-        const minutosTotales = Math.round(m.horasMarcha * 60);
-        if (minutosTotales < 60) {
-          return `${minutosTotales} min`;
-        }
-        const hs = Math.floor(minutosTotales / 60);
-        const mins = minutosTotales % 60;
-        return mins > 0 ? `${hs} hs ${mins} min` : `${hs} hs`;
-      })()}
-    </b>
-  </div>
-</div>
+
+                <div>
+                  <span className="rotulo">Potencia Prom.</span>
+                  <div>
+                    <b style={{ fontSize: '1.2rem' }}>
+                      {m.potenciaPromedioMarcha >= 1000
+                        ? `${(m.potenciaPromedioMarcha / 1000).toFixed(2)} kW`
+                        : `${Math.round(m.potenciaPromedioMarcha)} W`}
+                    </b>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="rotulo">Tiempo de Uso</span>
+                  <div>
+                    <b>
+                      {(() => {
+                        const minutosTotales = Math.round(m.horasMarcha * 60);
+                        if (minutosTotales < 60) return `${minutosTotales} min`;
+                        const hs = Math.floor(minutosTotales / 60);
+                        const mins = minutosTotales % 60;
+                        return mins > 0 ? `${hs} hs ${mins} min` : `${hs} hs`;
+                      })()}
+                    </b>
+                  </div>
+                </div>
 
                 <div>
                   <span className="rotulo">Consumo</span>
