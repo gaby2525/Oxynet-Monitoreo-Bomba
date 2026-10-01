@@ -10,7 +10,7 @@ let auth: Auth | null = null;
 /** Mensaje del SDK si la inicializacion fallo, para poder mostrarlo en pantalla. */
 export let errorDeInicializacion: string | null = null;
 
-function obtenerApp(): FirebaseApp | null {
+export function obtenerApp(): FirebaseApp | null {
   if (!firebaseConfigurado || errorDeInicializacion) return null;
   if (!app) {
     try {
@@ -23,7 +23,7 @@ function obtenerApp(): FirebaseApp | null {
   return app;
 }
 
-function obtenerDb(): Database | null {
+export function obtenerDb(): Database | null {
   const a = obtenerApp();
   if (!a) return null;
   if (!db) {
@@ -37,4 +37,19 @@ function obtenerDb(): Database | null {
   return db;
 }
 
+export function obtenerAuth(): Auth | null {
+  const a = obtenerApp();
+  if (!a) return null;
+  if (!auth) {
+    try {
+      auth = getAuth(a);
+    } catch (err) {
+      errorDeInicializacion = err instanceof Error ? err.message : String(err);
+      return null;
+    }
+  }
+  return auth;
+}
+
+// Inicializamos la base al cargar el módulo
 obtenerDb();
