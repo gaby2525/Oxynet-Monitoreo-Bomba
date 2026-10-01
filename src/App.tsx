@@ -1,7 +1,7 @@
 import { ResumenMensual } from './components/ResumenMensual';
 import { memo, useCallback, useMemo, useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
-import { db } from './lib/firebase';
+import { obtenerDb } from './lib/firebase';
 import { GraficoMetrica } from './components/GraficoMetrica';
 import { GraficoTensionCorriente } from './components/GraficoTensionCorriente';
 import { NavSecciones } from './components/NavSecciones';
