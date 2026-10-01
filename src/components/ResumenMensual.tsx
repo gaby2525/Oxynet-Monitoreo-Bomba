@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ref, set } from 'firebase/database';
-import { db } from '../firebaseConfig'; // Ajustá la ruta a tu firebaseConfig si difiere
+import { db } from '../lib/firebase';
 
 interface ResumenMensualProps {
   puntos: any[];
@@ -8,7 +8,7 @@ interface ResumenMensualProps {
   umbralMarcha?: number;
 }
 
-export function ResumenMensual({ puntos, historicoGuardado = {}, umbralMarcha = 0.5 }: ResumenMensualProps) {
+export function ResumenMensual({ puntos, historicoGuardado = {} }: ResumenMensualProps) {
   // 1. Agrupar y calcular resúmenes de los puntos crudos en memoria (Mes actual)
   const resumenesCalculados = useMemo(() => {
     if (!Array.isArray(puntos)) return {};
@@ -93,7 +93,6 @@ export function ResumenMensual({ puntos, historicoGuardado = {}, umbralMarcha = 
       .reverse();
 
     return claves.map((clave) => {
-      // Si está guardado en Firebase usa el guardado, de lo contrario usa el calculado en vivo
       const datosGuardados = historicoGuardado[clave];
       const datosCalculados = resumenesCalculados[clave];
 
@@ -108,6 +107,10 @@ export function ResumenMensual({ puntos, historicoGuardado = {}, umbralMarcha = 
   // Función para guardar el resumen de un mes en Firebase
   const guardarEnFirebase = async (item: any) => {
     try {
+      if (!db) {
+        alert('❌ No hay conexión activa con Firebase.');
+        return;
+      }
       const dataToSave = {
         claveMes: item.claveMes,
         nombreMes: item.nombreMes,
