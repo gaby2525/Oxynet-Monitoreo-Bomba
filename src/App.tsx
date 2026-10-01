@@ -82,10 +82,13 @@ export function App() {
     desdeMs,
   } = useHistorial(rango, ventana, auth.listo);
 
-  // NUEVO EFFECT: Escucha las fotos de meses guardados en '/resumenes_mensuales'
+// Escuchar los resúmenes guardados usando DB_ROOT
   useEffect(() => {
-    if (!auth.listo || !db) return;
-    const resumenesRef = ref(db, 'bomba_oxigeno/resumenes_mensuales');
+    if (!auth.listo) return;
+    const database = obtenerDb();
+    if (!database) return;
+
+    const resumenesRef = ref(database, `${DB_ROOT}/resumenes_mensuales`);
     const unsubscribe = onValue(resumenesRef, (snapshot) => {
       if (snapshot.exists()) {
         setResumenesHistoricos(snapshot.val());
