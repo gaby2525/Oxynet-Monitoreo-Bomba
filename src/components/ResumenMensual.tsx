@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ref, set } from 'firebase/database';
-import { db } from '../lib/firebase';
+import { obtenerDb } from '../lib/firebase';
+import { DB_ROOT } from '../lib/config';
 
 interface ResumenMensualProps {
   puntos: any[];
@@ -107,10 +108,12 @@ export function ResumenMensual({ puntos, historicoGuardado = {} }: ResumenMensua
   // Función para guardar el resumen de un mes en Firebase
   const guardarEnFirebase = async (item: any) => {
     try {
-      if (!db) {
-        alert('❌ No hay conexión activa con Firebase.');
+      const database = obtenerDb();
+      if (!database) {
+        alert('❌ No se pudo conectar con Firebase. Verificá tu configuración.');
         return;
       }
+
       const dataToSave = {
         claveMes: item.claveMes,
         nombreMes: item.nombreMes,
@@ -122,11 +125,14 @@ export function ResumenMensual({ puntos, historicoGuardado = {} }: ResumenMensua
         consumoKwh: item.consumoKwh,
       };
 
-      await set(ref(db, `bomba_oxigeno/resumenes_mensuales/${item.claveMes}`), dataToSave);
+      // Usa DB_ROOT para respetar la ruta exacta de tu base de datos
+      const ruta = `${DB_ROOT}/resumenes_mensuales/${item.claveMes}`;
+      await set(ref(database, ruta), dataToSave);
+      
       alert(`✅ Resumen de ${item.nombreMes} guardado exitosamente en Firebase.`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al guardar en Firebase:', error);
-      alert('❌ Error al guardar el resumen.');
+      alert(`❌ Error al guardar: ${error?.message || 'Permiso denegado o error de red.'}`);
     }
   };
 
