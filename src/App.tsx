@@ -1,5 +1,7 @@
 import { ResumenMensual } from './components/ResumenMensual';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState, useEffect } from 'react';
+import { ref, onValue } from 'firebase/database';
+import { db } from './lib/firebase'; // Instancia de Firebase del proyecto
 import { GraficoMetrica } from './components/GraficoMetrica';
 import { GraficoTensionCorriente } from './components/GraficoTensionCorriente';
 import { NavSecciones } from './components/NavSecciones';
@@ -53,6 +55,9 @@ export function App() {
   const [ventanaManual, setVentanaManual] = useState<Ventana | null>(null);
   const [vistaTabla, setVistaTabla] = useState(false);
 
+  // NUEVO ESTADO: Guarda las fotos/cierres de meses pasados desde Firebase
+  const [resumenesHistoricos, setResumenesHistoricos] = useState<Record<string, any>>({});
+
   const colores = useColores(tema);
   const { umbrales, guardarUmbrales, restablecer } = useUmbrales();
 
@@ -76,8 +81,23 @@ export function App() {
     recortado,
     desdeMs,
   } = useHistorial(rango, ventana, auth.listo);
-   // Rango exacto que calcula los días transcurridos desde el día 1 de este mes
-// ✅ AHORA (Reemplazar por esto):
+
+  // NUEVO EFFECT: Escucha las fotos de meses guardados en '/resumenes_mensuales'
+  useEffect(() => {
+    if (!auth.listo || !db) return;
+    const resumenesRef = ref(db, 'bomba_oxigeno/resumenes_mensuales');
+    const unsubscribe = onValue(resumenesRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setResumenesHistoricos(snapshot.val());
+      } else {
+        setResumenesHistoricos({});
+      }
+    });
+
+    return () => unsubscribe();
+  }, [auth.listo]);
+
+  // Rango exacto que calcula los días transcurridos desde el día 1 de este mes
   const rangoMesActual = useMemo(() => {
     const ahora = new Date();
     const inicioDeMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -86,7 +106,7 @@ export function App() {
       id: 'mes-actual',
       ms: msTranscurridos,
       etiqueta: 'Mes actual',
-      maxPuntos: 50000, // 👈 Subimos a 50.000 para cubrir todo el mes de lecturas
+      maxPuntos: 50000, // Cubre todo el mes de lecturas
     };
   }, [ahoraGrueso]);
 
@@ -94,9 +114,8 @@ export function App() {
     () => ventanaDe(rangoMesActual, epochConsulta, null),
     [rangoMesActual, epochConsulta],
   );
-const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
 
-  
+  const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
 
   const puntosMesEnMarcha = useMemo<PuntoHistorial[]>(() => {
     if (!Array.isArray(puntosMesActual)) return [];
@@ -104,7 +123,7 @@ const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActua
       (p) => (p?.corriente ?? 0) >= 0.5 || (p?.potencia ?? 0) > umbrales.potenciaApagada
     );
   }, [puntosMesActual, umbrales.potenciaApagada]);
-  //const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActual, auth.listo);
+
   const hastaMs = useMemo(() => {
     if (rango.ms === null) return ventana.hastaMs;
     const ultimo = puntos.length > 0 ? puntos[puntos.length - 1].ms : 0;
@@ -361,8 +380,13 @@ const { puntos: puntosMesActual } = useHistorial(rangoMesActual, ventanaMesActua
 
         {seccion === 'analisis' && (
           <>
-            {/* NUEVO MÓDULO DE PROMEDIOS EN MARCHA Y ARRANQUES */}
-            <ResumenMensual puntos={puntosMesEnMarcha} umbralMarcha={0.5} />
+            {/* NUEVO MÓDULO CONECTADO CON HISTÓRICOS Y EN VIVO */}
+            <ResumenMensual 
+              puntos={puntosMesEnMarcha} 
+              historicoGuardado={resumenesHistoricos} 
+              umbralMarcha={0.5} 
+            />
+            
             {barraRango}
             
             <ResumenPeriodo
