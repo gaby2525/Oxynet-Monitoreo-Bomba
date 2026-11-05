@@ -85,13 +85,14 @@ export function ResumenMensual({ puntos, historicoGuardado = {} }: ResumenMensua
     return resultado;
   }, [puntos]);
 
-  // 2. Fusionar los datos calculados en vivo con los históricos guardados en Firebase
+  // 2. Fusionar y filtrar: Tomar ÚNICAMENTE los 2 meses más recientes (el actual y el anterior)
   const listaFinal = useMemo(() => {
     const claves = Array.from(
       new Set([...Object.keys(resumenesCalculados), ...Object.keys(historicoGuardado)])
     )
       .sort()
-      .reverse();
+      .reverse()
+      .slice(0, 2); // <--- FILTRADO CLAVE: solo los 2 meses más recientes
 
     return claves.map((clave) => {
       const datosGuardados = historicoGuardado[clave];
@@ -125,7 +126,6 @@ export function ResumenMensual({ puntos, historicoGuardado = {} }: ResumenMensua
         consumoKwh: item.consumoKwh,
       };
 
-      // Usa DB_ROOT para respetar la ruta exacta de tu base de datos
       const ruta = `${DB_ROOT}/resumenes_mensuales/${item.claveMes}`;
       await set(ref(database, ruta), dataToSave);
       
