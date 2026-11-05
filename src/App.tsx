@@ -82,7 +82,7 @@ export function App() {
     desdeMs,
   } = useHistorial(rango, ventana, auth.listo);
 
-// Escuchar los resúmenes guardados usando DB_ROOT
+  // Escuchar los resúmenes guardados usando DB_ROOT
   useEffect(() => {
     if (!auth.listo) return;
     const database = obtenerDb();
@@ -99,6 +99,19 @@ export function App() {
 
     return () => unsubscribe();
   }, [auth.listo]);
+
+  // Filtra 'resumenesHistoricos' para mostrar únicamente los 2 meses más recientes (mes en curso y anterior)
+  const resumenesFiltrados = useMemo(() => {
+    if (!resumenesHistoricos) return {};
+    const clavesOrdenadas = Object.keys(resumenesHistoricos).sort();
+    const ultimasClaves = clavesOrdenadas.slice(-2);
+    
+    const resultado: Record<string, any> = {};
+    ultimasClaves.forEach((clave) => {
+      resultado[clave] = resumenesHistoricos[clave];
+    });
+    return resultado;
+  }, [resumenesHistoricos]);
 
   // Rango exacto que calcula los días transcurridos desde el día 1 de este mes
   const rangoMesActual = useMemo(() => {
@@ -290,226 +303,3 @@ export function App() {
                 </span>
                 {sensorCaido ? (
                   <span>
-                    <b>El ESP32 esta conectado pero el PZEM-004T no responde.</b> El equipo sigue
-                    reportandose (
-                    {dispositivo && dispositivo.ms > 0 ? haceCuanto(dispositivo.ms, ahoraFino) : 'hace poco'}
-                    ), asi que no es la red ni Firebase: es el sensor. Revisar los 5 V del lado TTL,
-                    que haya GND comun con el ESP32, y que RX/TX no esten cruzados. En el repo hay un
-                    sketch <code>firmware/prueba_pzem</code> que lo prueba solo, sin Wi-Fi.
-                  </span>
-                ) : (
-                  <span>
-                    Hace mas de {SEGUNDOS_PARA_SIN_DATOS} s que no llega una lectura nueva. Revisar
-                    que el ESP32 tenga energia y Wi-Fi; los graficos siguen mostrando lo ultimo
-                    registrado.
-                  </span>
-                )}
-              </div>
-            )}
-
-            <PanelAlarmas alarmas={alarmas} />
-
-            <TiraEstado
-              medicion={medicion}
-              umbrales={umbrales}
-              resumen={resumen}
-              ahora={ahoraFino}
-              etiquetaRango={etiquetaRango}
-            />
-
-            <section className="metricas" aria-label="Valores instantaneos">
-              {METRICAS.map((m, i) => (
-                <TarjetaMetrica
-                  key={m.clave}
-                  etiqueta={m.etiqueta}
-                  valor={medicion ? medicion[m.clave] : null}
-                  unidad={m.unidad}
-                  decimales={m.decimales}
-                  severidad={severidadDe(m.clave, medicion, umbrales)}
-                  acento={colores.series[i]}
-                  pie={descripcionLimite(umbrales, m.clave)}
-                />
-              ))}
-            </section>
-
-            {barraRango}
-
-            {/* GRAFICO COMBINADO (TENSION Y CORRIENTE) */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <GraficoTensionCorrienteMemo
-                serieTension={serieTension}
-                serieCorriente={serieCorriente}
-                limiteTension={umbrales.tension}
-                limiteCorriente={umbrales.corriente}
-                desdeMs={desdeMs}
-                hastaMs={hastaMs}
-                colorTension={colores.series[0]}
-                colorCorriente={colores.series[1]}
-                grilla={colores.grilla}
-                eje={colores.eje}
-                muted={colores.muted}
-                critico={colores.critico}
-                superficie={colores.superficie}
-                cargando={cargandoHistorial}
-              />
-            </div>
-
-            {/* GRAFICOS INDIVIDUALES */}
-            <div className="graficos">
-              {series.map(({ definicion, serie, agregado, stats }, i) => (
-                <GraficoMemo
-                  key={definicion.clave}
-                  definicion={definicion}
-                  descripcion={descripcionLimite(umbrales, definicion.clave)}
-                  limite={umbrales[definicion.clave]}
-                  serie={serie}
-                  agregado={agregado}
-                  stats={stats}
-                  desdeMs={desdeMs}
-                  hastaMs={hastaMs}
-                  color={colores.series[i]}
-                  colorSuave={colores.seriesSuaves[i]}
-                  grilla={colores.grilla}
-                  eje={colores.eje}
-                  muted={colores.muted}
-                  critico={colores.critico}
-                  superficie={colores.superficie}
-                  cargando={cargandoHistorial}
-                />
-              ))}
-            </div>
-          </>
-        )}
-
-        {seccion === 'analisis' && (
-          <>
-            {/* NUEVO MÓDULO CONECTADO CON HISTÓRICOS Y EN VIVO */}
-            <ResumenMensual 
-              puntos={puntosMesEnMarcha} 
-              historicoGuardado={resumenesHistoricos} 
-              umbralMarcha={0.5} 
-            />
-            
-            {barraRango}
-            
-            <ResumenPeriodo
-              parametros={parametros}
-              colores={colores.series}
-              etiquetaRango={etiquetaRango}
-              registros={puntos.length}
-            />
-
-            <div className="seccion__cabecera">
-              <h2>Registros</h2>
-              <div className="segmentado" role="group" aria-label="Forma de ver los registros">
-                <button type="button" aria-pressed={!vistaTabla} onClick={() => setVistaTabla(false)}>
-                  Resumen
-                </button>
-                <button type="button" aria-pressed={vistaTabla} onClick={() => setVistaTabla(true)}>
-                  Tabla completa
-                </button>
-              </div>
-              <button
-                type="button"
-                className="boton boton--principal"
-                disabled={puntos.length === 0}
-                onClick={descargar}
-              >
-                ↓ Descargar informe CSV
-              </button>
-            </div>
-
-            {vistaTabla ? (
-              <TablaRegistros puntos={puntos} umbrales={umbrales} />
-            ) : (
-              <div className="graficos">
-                {series.map(({ definicion, serie, agregado, stats }, i) => (
-                  <GraficoMemo
-                    key={definicion.clave}
-                    definicion={definicion}
-                    descripcion={descripcionLimite(umbrales, definicion.clave)}
-                    limite={umbrales[definicion.clave]}
-                    serie={serie}
-                    agregado={agregado}
-                    stats={stats}
-                    desdeMs={desdeMs}
-                    hastaMs={hastaMs}
-                    color={colores.series[i]}
-                    colorSuave={colores.seriesSuaves[i]}
-                    grilla={colores.grilla}
-                    eje={colores.eje}
-                    muted={colores.muted}
-                    critico={colores.critico}
-                    superficie={colores.superficie}
-                    cargando={cargandoHistorial}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {seccion === 'configuracion' && (
-          <>
-            {auth.aviso && (
-              <div className="nota" role="status">
-                <span className="nota__icono" aria-hidden="true">
-                  ▲
-                </span>
-                <span>{auth.aviso}</span>
-              </div>
-            )}
-
-            <div className="seccion__cabecera" style={{ marginTop: 4 }}>
-              <h2>Umbrales de alarma</h2>
-            </div>
-            <PanelUmbrales
-              umbrales={umbrales}
-              colores={colores.series}
-              onGuardar={guardarUmbrales}
-              onRestablecer={restablecer}
-            />
-
-            <div className="seccion__cabecera">
-              <h2>Dispositivo y red</h2>
-            </div>
-            <TarjetaDispositivo estado={dispositivo} ahora={ahoraFino} />
-
-            <div className="seccion__cabecera">
-              <h2>Apariencia</h2>
-            </div>
-            <section className="tarjeta dispositivo">
-              <div className="dispositivo__grilla">
-                <div className="dispositivo__dato">
-                  <span className="rotulo">Tema</span>
-                  <div style={{ marginTop: 4 }}>
-                    <SelectorTema tema={tema} onCambiar={setTema} />
-                  </div>
-                </div>
-                <div className="dispositivo__dato">
-                  <span className="rotulo">Nodo de datos</span>
-                  <b className="num">{DB_ROOT}</b>
-                </div>
-                <div className="dispositivo__dato">
-                  <span className="rotulo">Sesion</span>
-                  <b>{auth.autenticado ? 'Anonima activa' : 'Sin sesion'}</b>
-                </div>
-              </div>
-            </section>
-          </>
-        )}
-
-        <footer className="pie">
-          <span>
-            El PZEM-004T mide una sola fase: la potencia trifasica que se muestra es una estimacion
-            para carga equilibrada, y no detecta desbalance ni falta de fase.
-          </span>
-          <span>
-            Los umbrales se guardan en este navegador. La energia se integra a partir de la potencia
-            medida, salteando los huecos de mas de un minuto.
-          </span>
-        </footer>
-      </div>
-    </>
-  );
-}
