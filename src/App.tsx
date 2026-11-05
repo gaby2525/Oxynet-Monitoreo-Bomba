@@ -122,7 +122,7 @@ export function App() {
       id: 'mes-actual',
       ms: msTranscurridos,
       etiqueta: 'Mes actual',
-      maxPuntos: 50000, // Cubre todo el mes de lecturas
+      maxPuntos: 50000,
     };
   }, [ahoraGrueso]);
 
@@ -303,3 +303,190 @@ export function App() {
                 </span>
                 {sensorCaido ? (
                   <span>
+                    <b>El ESP32 esta conectado pero el PZEM-004T no responde.</b> El equipo sigue
+                    reportandose (
+                    {dispositivo && dispositivo.ms > 0 ? haceCuanto(dispositivo.ms, ahoraFino) : 'hace poco'}
+                    ), asi que no es la red ni Firebase: es el sensor. Revisar los 5 V del lado TTL,
+                    que haya GND comun con el ESP32, y que RX/TX no esten cruzados. En el repo hay un
+                    sketch <code>firmware/prueba_pzem</code> que lo prueba solo, sin Wi-Fi.
+                  </span>
+                ) : (
+                  <span>
+                    Hace mas de {SEGUNDOS_PARA_SIN_DATOS} s que no llega una lectura nueva. Revisar
+                    que el ESP32 tenga energia y Wi-Fi; los graficos siguen mostrando lo ultimo
+                    registrado.
+                  </span>
+                )}
+              </div>
+            )}
+
+            <PanelAlarmas alarmas={alarmas} />
+
+            <TiraEstado
+              medicion={medicion}
+              umbrales={umbrales}
+              resumen={resumen}
+              ahora={ahoraFino}
+              etiquetaRango={etiquetaRango}
+            />
+
+            <section className="metricas" aria-label="Valores instantaneos">
+              {METRICAS.map((m, i) => (
+                <TarjetaMetrica
+                  key={m.clave}
+                  etiqueta={m.etiqueta}
+                  valor={medicion ? medicion[m.clave] : null}
+                  unidad={m.unidad}
+                  decimales={m.decimales}
+                  severidad={severidadDe(m.clave, medicion, umbrales)}
+                  acento={colores.series[i]}
+                  pie={descripcionLimite(umbrales, m.clave)}
+                />
+              ))}
+            </section>
+
+            {barraRango}
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <GraficoTensionCorrienteMemo
+                serieTension={serieTension}
+                serieCorriente={serieCorriente}
+                limiteTension={umbrales.tension}
+                limiteCorriente={umbrales.corriente}
+                desdeMs={desdeMs}
+                hastaMs={hastaMs}
+                colorTension={colores.series[0]}
+                colorCorriente={colores.series[1]}
+                grilla={colores.grilla}
+                eje={colores.eje}
+                muted={colores.muted}
+                critico={colores.critico}
+                superficie={colores.superficie}
+                cargando={cargandoHistorial}
+              />
+            </div>
+
+            <div className="graficos">
+              {series.map(({ definicion, serie, agregado, stats }, i) => (
+                <GraficoMemo
+                  key={definicion.clave}
+                  definicion={definicion}
+                  descripcion={descripcionLimite(umbrales, definicion.clave)}
+                  limite={umbrales[definicion.clave]}
+                  serie={serie}
+                  agregado={agregado}
+                  stats={stats}
+                  desdeMs={desdeMs}
+                  hastaMs={hastaMs}
+                  color={colores.series[i]}
+                  colorSuave={colores.seriesSuaves[i]}
+                  grilla={colores.grilla}
+                  eje={colores.eje}
+                  muted={colores.muted}
+                  critico={colores.critico}
+                  superficie={colores.superficie}
+                  cargando={cargandoHistorial}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {seccion === 'analisis' && (
+          <>
+            <ResumenMensual 
+              puntos={puntosMesEnMarcha} 
+              historicoGuardado={resumenesFiltrados} 
+              umbralMarcha={0.5} 
+            />
+            
+            {barraRango}
+            
+            <ResumenPeriodo
+              parametros={parametros}
+              colores={colores.series}
+              etiquetaRango={etiquetaRango}
+              registros={puntos.length}
+            />
+
+            <div className="seccion__cabecera">
+              <h2>Registros</h2>
+              <div className="segmentado" role="group" aria-label="Forma de ver los registros">
+                <button type="button" aria-pressed={!vistaTabla} onClick={() => setVistaTabla(false)}>
+                  Resumen
+                </button>
+                <button type="button" aria-pressed={vistaTabla} onClick={() => setVistaTabla(true)}>
+                  Tabla completa
+                </button>
+              </div>
+              <button
+                type="button"
+                className="boton boton--principal"
+                disabled={puntos.length === 0}
+                onClick={descargar}
+              >
+                ↓ Descargar informe CSV
+              </button>
+            </div>
+
+            {vistaTabla ? (
+              <TablaRegistros puntos={puntos} umbrales={umbrales} />
+            ) : (
+              <div className="graficos">
+                {series.map(({ definicion, serie, agregado, stats }, i) => (
+                  <GraficoMemo
+                    key={definicion.clave}
+                    definicion={definicion}
+                    descripcion={descripcionLimite(umbrales, definicion.clave)}
+                    limite={umbrales[definicion.clave]}
+                    serie={serie}
+                    agregado={agregado}
+                    stats={stats}
+                    desdeMs={desdeMs}
+                    hastaMs={hastaMs}
+                    color={colores.series[i]}
+                    colorSuave={colores.seriesSuaves[i]}
+                    grilla={colores.grilla}
+                    eje={colores.eje}
+                    muted={colores.muted}
+                    critico={colores.critico}
+                    superficie={colores.superficie}
+                    cargando={cargandoHistorial}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {seccion === 'configuracion' && (
+          <>
+            {auth.aviso && (
+              <div className="nota" role="status">
+                <span className="nota__icono" aria-hidden="true">
+                  ▲
+                </span>
+                <span>{auth.aviso}</span>
+              </div>
+            )}
+
+            <div className="seccion__cabecera" style={{ marginTop: 4 }}>
+              <h2>Umbrales de alarma</h2>
+            </div>
+            <PanelUmbrales
+              umbrales={umbrales}
+              colores={colores.series}
+              onGuardar={guardarUmbrales}
+              onRestablecer={restablecer}
+            />
+
+            <div className="seccion__cabecera">
+              <h2>Dispositivo y red</h2>
+            </div>
+            <TarjetaDispositivo estado={dispositivo} ahora={ahoraFino} />
+
+            <div className="seccion__cabecera">
+              <h2>Apariencia</h2>
+            </div>
+            <section className="tarjeta dispositivo">
+              <div className="dispositivo__
